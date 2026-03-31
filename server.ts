@@ -11,6 +11,7 @@ import crypto from 'crypto';
 import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import cors from 'cors';
+import pem from 'pem';
 
 const app = express();
 const PORT = 3000;
@@ -151,6 +152,11 @@ app.post('/api/cert/upload', authenticate, upload.single('pfxFile'), (req, res) 
     const file = req.file;
     const { password } = req.body;
 
+    console.log('Upload request received:', {
+      file: file ? file.originalname : null,
+      passwordLength: password ? password.length : 0
+    });
+
     if (!file) {
       return res.status(400).json({ error: 'Nenhum arquivo enviado' });
     }
@@ -160,27 +166,34 @@ app.post('/api/cert/upload', authenticate, upload.single('pfxFile'), (req, res) 
 
     const pfxBuffer = fs.readFileSync(file.path);
 
-    // Validate PFX password
-    try {
-      tls.createSecureContext({
-        pfx: pfxBuffer,
-        passphrase: password
-      });
-    } catch (err) {
-      fs.unlinkSync(file.path); // Clean up
-      return res.status(400).json({ error: 'Senha do certificado incorreta ou arquivo inválido' });
-    }
+    // Validate PFX password and extract PEMs using pem (OpenSSL)
+    pem.readPkcs12(pfxBuffer, { p12Password: password }, (err, result) => {
+      if (err) {
+        console.error('Error validating PFX with pem:', err);
+        fs.unlinkSync(file.path); // Clean up
+        return res.status(400).json({ error: 'Senha do certificado incorreta ou arquivo inválido: ' + err.message });
+      }
 
-    // Save to /backup
-    const destPath = path.join(backupDir, 'certificado.pfx');
-    fs.copyFileSync(file.path, destPath);
-    fs.unlinkSync(file.path); // Clean up tmp file
+      const privateKeyPem = result.key;
+      const certPem = result.cert;
 
-    // Save password securely (in a real app, encrypt this or use a secret manager)
-    // For this demo, we'll store it in a local json file in the backup dir
-    fs.writeFileSync(path.join(backupDir, 'cert_info.json'), JSON.stringify({ password }));
+      if (!privateKeyPem || !certPem) {
+        fs.unlinkSync(file.path); // Clean up
+        return res.status(400).json({ error: 'Certificado ou chave privada não encontrados no arquivo PFX.' });
+      }
 
-    res.json({ success: true, message: 'Certificado importado e validado com sucesso!' });
+      // Save to /backup
+      const destPath = path.join(backupDir, 'certificado.pfx');
+      fs.copyFileSync(file.path, destPath);
+      fs.unlinkSync(file.path); // Clean up tmp file
+
+      // Save PEMs and password securely
+      fs.writeFileSync(path.join(backupDir, 'cert_info.json'), JSON.stringify({ password }));
+      fs.writeFileSync(path.join(backupDir, 'key.pem'), privateKeyPem);
+      fs.writeFileSync(path.join(backupDir, 'cert.pem'), certPem);
+
+      res.json({ success: true, message: 'Certificado importado e validado com sucesso!' });
+    });
   } catch (error: any) {
     console.error('Erro ao processar certificado:', error);
     res.status(500).json({ error: 'Erro interno ao processar certificado' });
@@ -241,12 +254,20 @@ app.post('/api/nfse/emitir', authenticate, async (req, res) => {
     const xmlRps = generateRpsXml(data);
 
     // 2. Assinar o XML (Requer Certificado A1)
-    const certPem = process.env.CERT_PEM;
-    const keyPem = process.env.KEY_PEM;
+    let certPem = process.env.CERT_PEM;
+    let keyPem = process.env.KEY_PEM;
+
+    const certPath = path.join(backupDir, 'cert.pem');
+    const keyPath = path.join(backupDir, 'key.pem');
+
+    if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+      certPem = fs.readFileSync(certPath, 'utf-8');
+      keyPem = fs.readFileSync(keyPath, 'utf-8');
+    }
 
     if (!certPem || !keyPem) {
       return res.status(400).json({
-        error: 'Certificado Digital A1 não configurado. Configure as variáveis CERT_PEM e KEY_PEM no ambiente.',
+        error: 'Certificado Digital A1 não configurado. Faça o upload do arquivo .pfx nas configurações.',
         xmlPreview: xmlRps // Retornamos o XML gerado para visualização no frontend
       });
     }
