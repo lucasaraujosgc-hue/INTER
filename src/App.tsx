@@ -12,34 +12,22 @@ import {
 import Login from './components/Login';
 import Configuracoes from './components/Configuracoes';
 import Clientes from './components/Clientes';
+import Cobrancas from './components/Cobrancas';
+import Nfse from './components/Nfse';
+import BancoInter from './components/BancoInter';
+import WebIss from './components/WebIss';
+import Relatorios from './components/Relatorios';
 
 // --- DATA ---
-const cobrancas = [
-  {id:'COB-001',client:'1',value:3200,due:'2025-01-10',status:'paid',   boleto:true, nfse:'ok'},
-  {id:'COB-002',client:'2',value:1800,due:'2025-01-15',status:'paid',   boleto:true, nfse:'ok'},
-  {id:'COB-003',client:'3',value:2500,due:'2025-01-20',status:'pending',boleto:true, nfse:'pend'},
-  {id:'COB-004',client:'4',value:900, due:'2025-01-05',status:'overdue',boleto:true, nfse:'none'},
-  {id:'COB-005',client:'5',value:1200,due:'2025-01-25',status:'pending',boleto:true, nfse:'pend'},
-  {id:'COB-006',client:'1',value:3200,due:'2025-02-10',status:'draft',  boleto:false,nfse:'none'},
-  {id:'COB-007',client:'2',value:1800,due:'2025-01-08',status:'overdue',boleto:true, nfse:'none'},
-];
-
-const activities = [
-  {color:'var(--color-brand-green)', text:'NFS-e #000021 emitida para <strong>Beta Serviços ME</strong> via WebISS · ABRASF v2.04',  time:'Há 2 minutos'},
-  {color:'var(--color-brand-green)', text:'Boleto COB-002 confirmado — R$ 1.800,00 · Webhook Inter recebido com sucesso',             time:'Há 8 minutos'},
-  {color:'#3b82f6',  text:'RPS enviado ao WebISS via SOAP · aguardando processamento para Gama Consultoria',          time:'Há 15 minutos'},
-  {color:'#f59e0b', text:'Boleto COB-007 venceu há 3 dias · Delta Tech S.A. notificado por e-mail',                  time:'Há 1 hora'},
-  {color:'var(--color-brand-green)', text:'Boleto COB-003 gerado via Banco Inter API — Gama Consultoria · R$ 2.500,00',              time:'Há 2 horas'},
-  {color:'var(--color-brand-dim)', text:'Certificado digital ICP-Brasil A1 verificado · válido por 284 dias',                  time:'Ontem, 09:14'},
-];
-
+const cobrancas: any[] = [];
+const activities: any[] = [];
 const barData = [
-  {label:'Ago',val:9200, pct:50},
-  {label:'Set',val:11400,pct:62},
-  {label:'Out',val:10800,pct:58},
-  {label:'Nov',val:14200,pct:77},
-  {label:'Dez',val:16900,pct:91},
-  {label:'Jan',val:18450,pct:100},
+  {label:'Ago',val:0, pct:0},
+  {label:'Set',val:0,pct:0},
+  {label:'Out',val:0,pct:0},
+  {label:'Nov',val:0,pct:0},
+  {label:'Dez',val:0,pct:0},
+  {label:'Jan',val:0,pct:0},
 ];
 
 // --- COMPONENTS ---
@@ -79,6 +67,16 @@ export default function App() {
             <Configuracoes token={token} />
           ) : activeTab === 'Clientes' ? (
             <Clientes token={token} />
+          ) : activeTab === 'Cobranças' ? (
+            <Cobrancas token={token} />
+          ) : activeTab === 'NFS-e' ? (
+            <Nfse token={token} />
+          ) : activeTab === 'Banco Inter' ? (
+            <BancoInter token={token} />
+          ) : activeTab === 'WebISS' ? (
+            <WebIss token={token} />
+          ) : activeTab === 'Relatórios' ? (
+            <Relatorios token={token} />
           ) : (
             <div className="flex items-center justify-center h-full text-brand-muted">
               Módulo em desenvolvimento
@@ -214,36 +212,36 @@ function Dashboard({ filter, setFilter, token }: { filter: string, setFilter: (f
       <div className="grid grid-cols-4 gap-3.5">
         <KpiCard 
           title="Recebido (mês)" 
-          value="R$ 18.450" 
+          value="R$ 0,00" 
           icon={TrendingUp} 
           color="green" 
-          delta="+12% vs mês anterior" 
-          deltaType="up" 
-          progress={73} 
+          delta="0% vs mês anterior" 
+          deltaType="neutral" 
+          progress={0} 
         />
         <KpiCard 
           title="A Receber" 
-          value="R$ 6.800" 
+          value="R$ 0,00" 
           icon={Clock} 
           color="amber" 
-          delta="4 cobranças pendentes" 
+          delta="0 cobranças pendentes" 
           deltaType="neutral" 
-          progress={27} 
+          progress={0} 
         />
         <KpiCard 
           title="Inadimplente" 
-          value="R$ 1.200" 
+          value="R$ 0,00" 
           icon={AlertCircle} 
           color="red" 
-          delta="2 clientes em atraso" 
-          deltaType="down" 
+          delta="0 clientes em atraso" 
+          deltaType="neutral" 
         />
         <KpiCard 
           title="NFS-e Emitidas" 
-          value="24" 
+          value="0" 
           icon={Receipt} 
           color="blue" 
-          delta="Mês atual · 2 pendentes" 
+          delta="Mês atual · 0 pendentes" 
           deltaType="neutral" 
         />
       </div>
@@ -282,7 +280,13 @@ function Dashboard({ filter, setFilter, token }: { filter: string, setFilter: (f
                 </tr>
               </thead>
               <tbody>
-                {cobrancas.filter(c => filter === 'all' || c.status === filter).map((c) => {
+                {cobrancas.filter(c => filter === 'all' || c.status === filter).length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-brand-muted">
+                      Nenhuma cobrança encontrada.
+                    </td>
+                  </tr>
+                ) : cobrancas.filter(c => filter === 'all' || c.status === filter).map((c) => {
                   const client = clients.find(cl => cl.id === c.client) || { name: 'Cliente Desconhecido', init: '?', color: '#666' };
                   return (
                     <tr key={c.id} className="hover:bg-brand-surface2 group border-b border-white/5 last:border-0">
@@ -341,15 +345,15 @@ function Dashboard({ filter, setFilter, token }: { filter: string, setFilter: (f
                 <div className="text-[13px] font-bold text-brand-text">Banco Inter</div>
                 <div className="text-[11px] text-brand-muted mt-0.5">API de Cobranças v2</div>
               </div>
-              <div className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-brand-green">
-                <div className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse shadow-[0_0_0_rgba(16,185,129,0.4)]" /> Conectado
+              <div className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-brand-dim">
+                <div className="w-1.5 h-1.5 rounded-full bg-brand-dim" /> Desconectado
               </div>
             </div>
             <div className="p-3.5 px-4 text-[12.5px]">
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Client ID</span><span className="text-brand-text font-medium font-mono">••••••••a3f2</span></div>
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Cert. Digital</span><span className="text-brand-green font-medium">✓ Instalado</span></div>
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Boletos hoje</span><span className="text-brand-text font-medium">3 gerados</span></div>
-              <div className="flex justify-between py-1.5"><span className="text-brand-muted">Webhook</span><span className="text-brand-green font-medium">Ativo</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Client ID</span><span className="text-brand-text font-medium font-mono">Não configurado</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Cert. Digital</span><span className="text-brand-dim font-medium">Não instalado</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Boletos hoje</span><span className="text-brand-text font-medium">0 gerados</span></div>
+              <div className="flex justify-between py-1.5"><span className="text-brand-muted">Webhook</span><span className="text-brand-dim font-medium">Inativo</span></div>
             </div>
           </div>
 
@@ -361,14 +365,14 @@ function Dashboard({ filter, setFilter, token }: { filter: string, setFilter: (f
                 <div className="text-[13px] font-bold text-brand-text">WebISS / NFS-e</div>
                 <div className="text-[11px] text-brand-muted mt-0.5">ABRASF v2.04 · SOAP/XML</div>
               </div>
-              <div className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-amber-500">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Homologação
+              <div className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-brand-dim">
+                <div className="w-1.5 h-1.5 rounded-full bg-brand-dim" /> Não configurado
               </div>
             </div>
             <div className="p-3.5 px-4 text-[12.5px]">
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Município</span><span className="text-brand-text font-medium">Feira de Santana/BA</span></div>
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">CNPJ Prestador</span><span className="text-brand-text font-medium font-mono">••.•••.•••/0001-••</span></div>
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Cert. ICP-Brasil</span><span className="text-brand-green font-medium">✓ A1/A3 instalado</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Município</span><span className="text-brand-text font-medium">Não configurado</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">CNPJ Prestador</span><span className="text-brand-text font-medium font-mono">Não configurado</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Cert. ICP-Brasil</span><span className="text-brand-dim font-medium">Não instalado</span></div>
               <div className="flex justify-between py-1.5"><span className="text-brand-muted">Schema</span><span className="text-brand-text font-medium">nfse.xsd v2.04</span></div>
             </div>
             <div className="p-3 px-4 pb-4 bg-brand-surface2/30">
@@ -414,7 +418,9 @@ function Dashboard({ filter, setFilter, token }: { filter: string, setFilter: (f
           <div className="text-[12px] text-brand-muted mt-0.5">Ações automáticas do sistema</div>
         </div>
         <div>
-          {activities.map((a, i) => (
+          {activities.length === 0 ? (
+            <div className="p-6 text-center text-brand-muted text-[13px]">Nenhuma atividade recente.</div>
+          ) : activities.map((a, i) => (
             <div key={i} className="flex gap-2.5 p-2.5 px-3.5 border-b border-white/5 last:border-0 hover:bg-brand-surface2/50 transition-colors">
               <div className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ backgroundColor: a.color }} />
               <div>
