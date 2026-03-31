@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Loader2, MapPin, Phone, Mail } from 'lucide-react';
+import { Users, Plus, Loader2, MapPin, Phone, Mail, Trash2 } from 'lucide-react';
 
 export default function Clientes({ token }: { token: string }) {
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const initialFormState = {
     cpfCnpj: '',
@@ -39,6 +40,32 @@ export default function Clientes({ token }: { token: string }) {
       console.error('Erro ao buscar clientes', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este cliente?')) return;
+    
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/clients/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (res.ok) {
+        setClients(clients.filter(c => c.id !== id));
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Erro ao excluir cliente');
+      }
+    } catch (err) {
+      console.error('Erro ao excluir cliente', err);
+      alert('Erro de conexão ao excluir cliente');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -261,6 +288,7 @@ export default function Clientes({ token }: { token: string }) {
                 <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">CPF/CNPJ</th>
                 <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Contato</th>
                 <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Localidade</th>
+                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2 text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -291,6 +319,16 @@ export default function Clientes({ token }: { token: string }) {
                     {client.municipioUf ? (
                       <div className="flex items-center gap-1.5"><MapPin size={12} /> {client.municipioUf}</div>
                     ) : '-'}
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <button
+                      onClick={() => handleDelete(client.id)}
+                      disabled={deletingId === client.id}
+                      className="p-2 text-brand-muted hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors disabled:opacity-50"
+                      title="Excluir cliente"
+                    >
+                      {deletingId === client.id ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
+                    </button>
                   </td>
                 </tr>
               ))}

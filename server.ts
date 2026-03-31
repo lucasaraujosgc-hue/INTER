@@ -56,7 +56,7 @@ const upload = multer({ dest: path.join(process.cwd(), 'tmp') });
 app.use(express.json());
 
 // --- ABRASF v2.04 XML Generation & Signing ---
-function generateRpsXml(data: any) {
+function generateRpsXml(data: any, settings: any) {
   // Geração do XML do RPS seguindo o padrão ABRASF v2.04
   // O atributo Id é obrigatório para a assinatura digital
   const idRps = `RPS_${Date.now()}`;
@@ -83,17 +83,17 @@ function generateRpsXml(data: any) {
           <Aliquota>${data.aliquota.toFixed(2)}</Aliquota>
         </Valores>
         <ItemListaServico>${data.itemLc116 || '17.19'}</ItemListaServico>
-        <CodigoTributacaoMunicipio>123456</CodigoTributacaoMunicipio>
+        <CodigoTributacaoMunicipio>${settings.codigoMunicipio || '123456'}</CodigoTributacaoMunicipio>
         <Discriminacao>${data.descricao}</Discriminacao>
-        <CodigoMunicipio>2910800</CodigoMunicipio>
+        <CodigoMunicipio>${settings.codigoMunicipio || '2910800'}</CodigoMunicipio>
         <ExigibilidadeISS>1</ExigibilidadeISS>
-        <MunicipioIncidencia>2910800</MunicipioIncidencia>
+        <MunicipioIncidencia>${settings.codigoMunicipio || '2910800'}</MunicipioIncidencia>
       </Servico>
       <Prestador>
         <CpfCnpj>
-          <Cnpj>00000000000100</Cnpj>
+          <Cnpj>${(settings.prestadorCnpj || '00000000000100').replace(/\D/g, '')}</Cnpj>
         </CpfCnpj>
-        <InscricaoMunicipal>12345</InscricaoMunicipal>
+        <InscricaoMunicipal>${settings.prestadorIm || '12345'}</InscricaoMunicipal>
       </Prestador>
       <Tomador>
         <IdentificacaoTomador>
@@ -113,7 +113,9 @@ function generateRpsXml(data: any) {
 function signXml(xml: string, keyPem: string, certPem: string): string {
   const sig = new SignedXml({
     privateKey: keyPem,
-    publicCert: certPem
+    publicCert: certPem,
+    canonicalizationAlgorithm: "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
+    signatureAlgorithm: "http://www.w3.org/2000/09/xmldsig#rsa-sha1"
   });
   
   // Padrões exigidos pelo manual ABRASF v2.04 (Pág. 26)
@@ -248,6 +250,23 @@ app.post('/api/clients', authenticate, (req, res) => {
   }
 });
 
+app.delete('/api/clients/:id', authenticate, (req, res) => {
+  try {
+    const { id } = req.params;
+    const clients = JSON.parse(fs.readFileSync(clientsFile, 'utf-8'));
+    const updatedClients = clients.filter((c: any) => c.id !== id);
+    
+    if (clients.length === updatedClients.length) {
+      return res.status(404).json({ error: 'Cliente não encontrado' });
+    }
+
+    fs.writeFileSync(clientsFile, JSON.stringify(updatedClients));
+    res.json({ success: true, message: 'Cliente excluído com sucesso' });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao excluir cliente' });
+  }
+});
+
 app.get('/api/settings', authenticate, (req, res) => {
   try {
     const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
@@ -316,7 +335,7 @@ app.post('/api/cobrancas', authenticate, async (req, res) => {
 
     // 2. Emitir NFS-e
     if (toggles?.nfse) {
-      const xmlRps = generateRpsXml(data);
+      const xmlRps = generateRpsXml(data, settings);
       let certPem = process.env.CERT_PEM;
       let keyPem = process.env.KEY_PEM;
 
@@ -391,9 +410,10 @@ app.get('/api/nfse', authenticate, (req, res) => {
 app.post('/api/nfse/emitir', authenticate, async (req, res) => {
   try {
     const data = req.body;
+    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
     
     // 1. Gerar o XML do RPS
-    const xmlRps = generateRpsXml(data);
+    const xmlRps = generateRpsXml(data, settings);
 
     // 2. Assinar o XML (Requer Certificado A1)
     let certPem = process.env.CERT_PEM;
@@ -559,6 +579,70 @@ app.post('/api/inter/webhook', async (req, res) => {
   } catch (error) {
     console.error('Erro no webhook do Inter:', error);
     res.status(500).send('Erro interno');
+  }
+});
+
+app.get('/api/settings', authenticate, (req, res) => {
+  try {
+    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    res.json(settings);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao ler configurações' });
+  }
+});
+
+app.post('/api/settings', authenticate, (req, res) => {
+  try {
+    const currentSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    const newSettings = { ...currentSettings, ...req.body };
+    fs.writeFileSync(settingsFile, JSON.stringify(newSettings));
+    res.json({ success: true, settings: newSettings });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao salvar configurações' });
+  }
+});
+
+app.post('/api/nfse/test-connection', authenticate, async (req, res) => {
+  try {
+    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    const url = settings.webserviceUrl;
+    if (!url) {
+      return res.status(400).json({ error: 'URL do WebService não configurada.' });
+    }
+
+    let certPem = process.env.CERT_PEM;
+    let keyPem = process.env.KEY_PEM;
+
+    const certPath = path.join(backupDir, 'cert.pem');
+    const keyPath = path.join(backupDir, 'key.pem');
+
+    if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+      certPem = fs.readFileSync(certPath, 'utf-8');
+      keyPem = fs.readFileSync(keyPath, 'utf-8');
+    }
+
+    if (!certPem || !keyPem) {
+      return res.status(400).json({ error: 'Certificado Digital A1 não configurado.' });
+    }
+
+    const httpsAgent = new https.Agent({ cert: certPem, key: keyPem, rejectUnauthorized: false });
+    
+    // Simple GET request to test connection
+    try {
+      const response = await axios.get(url, { httpsAgent, timeout: 10000 });
+      res.json({ success: true, message: 'Conexão bem-sucedida!', status: response.status });
+    } catch (axiosError: any) {
+      if (axiosError.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx. This still means we connected!
+        res.json({ success: true, message: `Conexão estabelecida (Status: ${axiosError.response.status})`, status: axiosError.response.status });
+      } else {
+        throw axiosError;
+      }
+    }
+  } catch (error: any) {
+    console.error('Erro ao testar conexão:', error.message);
+    res.status(500).json({ error: `Falha na conexão: ${error.message}` });
   }
 });
 
