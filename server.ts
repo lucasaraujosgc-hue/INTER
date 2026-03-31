@@ -27,13 +27,7 @@ if (!fs.existsSync(backupDir)) {
 // Ensure clients file exists
 const clientsFile = path.join(backupDir, 'clients.json');
 if (!fs.existsSync(clientsFile)) {
-  fs.writeFileSync(clientsFile, JSON.stringify([
-    { id: '1', name: 'Empresa Alpha Ltda', cnpj: '00.000.000/0001-00', init: 'A', color: '#10b981' },
-    { id: '2', name: 'Beta Serviços ME', cnpj: '11.111.111/0001-11', init: 'B', color: '#3b82f6' },
-    { id: '3', name: 'Gama Consultoria', cnpj: '22.222.222/0001-22', init: 'G', color: '#8b5cf6' },
-    { id: '4', name: 'Delta Tech S.A.', cnpj: '33.333.333/0001-33', init: 'D', color: '#f59e0b' },
-    { id: '5', name: 'Omega Treinamentos', cnpj: '44.444.444/0001-44', init: 'O', color: '#ef4444' }
-  ]));
+  fs.writeFileSync(clientsFile, JSON.stringify([]));
 }
 
 // Ensure settings file exists
