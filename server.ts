@@ -11,7 +11,7 @@ import crypto from 'crypto';
 import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import cors from 'cors';
-import pem from 'pem';
+import forge from 'node-forge';
 
 const app = express();
 const PORT = 3000;
@@ -166,34 +166,44 @@ app.post('/api/cert/upload', authenticate, upload.single('pfxFile'), (req, res) 
 
     const pfxBuffer = fs.readFileSync(file.path);
 
-    // Validate PFX password and extract PEMs using pem (OpenSSL)
-    pem.readPkcs12(pfxBuffer, { p12Password: password }, (err, result) => {
-      if (err) {
-        console.error('Error validating PFX with pem:', err);
-        fs.unlinkSync(file.path); // Clean up
-        return res.status(400).json({ error: 'Senha do certificado incorreta ou arquivo inválido: ' + err.message });
-      }
+    let privateKeyPem = '';
+    let certPem = '';
 
-      const privateKeyPem = result.key;
-      const certPem = result.cert;
+    // Validate PFX password and extract PEMs using node-forge
+    try {
+      const p12Asn1 = forge.asn1.fromDer(pfxBuffer.toString('binary'));
+      const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, password);
+
+      for (const safeContents of p12.safeContents) {
+        for (const safeBag of safeContents.safeBags) {
+          if (safeBag.type === forge.pki.oids.keyBag || safeBag.type === forge.pki.oids.pkcs8ShroudedKeyBag) {
+            privateKeyPem = forge.pki.privateKeyToPem(safeBag.key as forge.pki.PrivateKey);
+          } else if (safeBag.type === forge.pki.oids.certBag) {
+            certPem = forge.pki.certificateToPem(safeBag.cert as forge.pki.Certificate);
+          }
+        }
+      }
 
       if (!privateKeyPem || !certPem) {
-        fs.unlinkSync(file.path); // Clean up
-        return res.status(400).json({ error: 'Certificado ou chave privada não encontrados no arquivo PFX.' });
+        throw new Error('Certificado ou chave privada não encontrados no arquivo PFX.');
       }
+    } catch (err: any) {
+      console.error('Error validating PFX with node-forge:', err);
+      fs.unlinkSync(file.path); // Clean up
+      return res.status(400).json({ error: 'Senha do certificado incorreta ou arquivo inválido: ' + err.message });
+    }
 
-      // Save to /backup
-      const destPath = path.join(backupDir, 'certificado.pfx');
-      fs.copyFileSync(file.path, destPath);
-      fs.unlinkSync(file.path); // Clean up tmp file
+    // Save to /backup
+    const destPath = path.join(backupDir, 'certificado.pfx');
+    fs.copyFileSync(file.path, destPath);
+    fs.unlinkSync(file.path); // Clean up tmp file
 
-      // Save PEMs and password securely
-      fs.writeFileSync(path.join(backupDir, 'cert_info.json'), JSON.stringify({ password }));
-      fs.writeFileSync(path.join(backupDir, 'key.pem'), privateKeyPem);
-      fs.writeFileSync(path.join(backupDir, 'cert.pem'), certPem);
+    // Save PEMs and password securely
+    fs.writeFileSync(path.join(backupDir, 'cert_info.json'), JSON.stringify({ password }));
+    fs.writeFileSync(path.join(backupDir, 'key.pem'), privateKeyPem);
+    fs.writeFileSync(path.join(backupDir, 'cert.pem'), certPem);
 
-      res.json({ success: true, message: 'Certificado importado e validado com sucesso!' });
-    });
+    res.json({ success: true, message: 'Certificado importado e validado com sucesso!' });
   } catch (error: any) {
     console.error('Erro ao processar certificado:', error);
     res.status(500).json({ error: 'Erro interno ao processar certificado' });
