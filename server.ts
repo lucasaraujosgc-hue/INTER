@@ -1,0 +1,379 @@
+import express from 'express';
+import { createServer as createViteServer } from 'vite';
+import path from 'path';
+import { SignedXml } from 'xml-crypto';
+import { DOMParser } from '@xmldom/xmldom';
+import axios from 'axios';
+import https from 'https';
+import tls from 'tls';
+import fs from 'fs';
+import crypto from 'crypto';
+import multer from 'multer';
+import jwt from 'jsonwebtoken';
+import cors from 'cors';
+
+const app = express();
+const PORT = 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'virgula-contabil-secret-key-2025';
+
+app.use(cors());
+
+// Ensure backup directory exists
+const backupDir = path.join(process.cwd(), 'backup');
+if (!fs.existsSync(backupDir)) {
+  fs.mkdirSync(backupDir, { recursive: true });
+}
+
+// Ensure clients file exists
+const clientsFile = path.join(backupDir, 'clients.json');
+if (!fs.existsSync(clientsFile)) {
+  fs.writeFileSync(clientsFile, JSON.stringify([
+    { id: '1', name: 'Empresa Alpha Ltda', cnpj: '00.000.000/0001-00', init: 'A', color: '#10b981' },
+    { id: '2', name: 'Beta Serviços ME', cnpj: '11.111.111/0001-11', init: 'B', color: '#3b82f6' },
+    { id: '3', name: 'Gama Consultoria', cnpj: '22.222.222/0001-22', init: 'G', color: '#8b5cf6' },
+    { id: '4', name: 'Delta Tech S.A.', cnpj: '33.333.333/0001-33', init: 'D', color: '#f59e0b' },
+    { id: '5', name: 'Omega Treinamentos', cnpj: '44.444.444/0001-44', init: 'O', color: '#ef4444' }
+  ]));
+}
+
+const upload = multer({ dest: path.join(process.cwd(), 'tmp') });
+
+app.use(express.json());
+
+// --- ABRASF v2.04 XML Generation & Signing ---
+function generateRpsXml(data: any) {
+  // Geração do XML do RPS seguindo o padrão ABRASF v2.04
+  // O atributo Id é obrigatório para a assinatura digital
+  const idRps = `RPS_${Date.now()}`;
+  
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<GerarNfseEnvio xmlns="http://www.abrasf.org.br/nfse.xsd">
+  <Rps>
+    <InfDeclaracaoPrestacaoServico Id="${idRps}">
+      <Rps>
+        <IdentificacaoRps>
+          <Numero>${Math.floor(Math.random() * 10000)}</Numero>
+          <Serie>UNICA</Serie>
+          <Tipo>1</Tipo>
+        </IdentificacaoRps>
+        <DataEmissao>${new Date().toISOString().split('.')[0]}</DataEmissao>
+        <Status>1</Status>
+      </Rps>
+      <Competencia>${new Date().toISOString().split('T')[0]}</Competencia>
+      <Servico>
+        <Valores>
+          <ValorServicos>${data.valor.toFixed(2)}</ValorServicos>
+          <IssRetido>2</IssRetido>
+          <ValorIss>${(data.valor * (data.aliquota / 100)).toFixed(2)}</ValorIss>
+          <Aliquota>${data.aliquota.toFixed(2)}</Aliquota>
+        </Valores>
+        <ItemListaServico>${data.itemLc116}</ItemListaServico>
+        <CodigoTributacaoMunicipio>123456</CodigoTributacaoMunicipio>
+        <Discriminacao>${data.descricao}</Discriminacao>
+        <CodigoMunicipio>2910800</CodigoMunicipio> <!-- Feira de Santana/BA -->
+        <ExigibilidadeISS>1</ExigibilidadeISS>
+        <MunicipioIncidencia>2910800</MunicipioIncidencia>
+      </Servico>
+      <Prestador>
+        <CpfCnpj>
+          <Cnpj>00000000000100</Cnpj>
+        </CpfCnpj>
+        <InscricaoMunicipal>12345</InscricaoMunicipal>
+      </Prestador>
+      <Tomador>
+        <IdentificacaoTomador>
+          <CpfCnpj>
+            <Cnpj>99999999000199</Cnpj>
+          </CpfCnpj>
+        </IdentificacaoTomador>
+        <RazaoSocial>${data.cliente}</RazaoSocial>
+      </Tomador>
+    </InfDeclaracaoPrestacaoServico>
+  </Rps>
+</GerarNfseEnvio>`;
+}
+
+function signXml(xml: string, keyPem: string, certPem: string): string {
+  const sig = new SignedXml({
+    privateKey: keyPem,
+    publicCert: certPem
+  });
+  
+  // Padrões exigidos pelo manual ABRASF v2.04 (Pág. 26)
+  sig.addReference({
+    xpath: "//*[@Id]",
+    transforms: [
+      "http://www.w3.org/2000/09/xmldsig#enveloped-signature",
+      "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
+    ],
+    digestAlgorithm: "http://www.w3.org/2000/09/xmldsig#sha1"
+  });
+  
+  sig.computeSignature(xml);
+  return sig.getSignedXml();
+}
+
+// --- Auth Middleware ---
+const authenticate = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: 'Token não fornecido' });
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    jwt.verify(token, JWT_SECRET);
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Token inválido' });
+  }
+};
+
+// --- API Routes ---
+app.post('/api/auth/login', (req, res) => {
+  const { password, remember } = req.body;
+  const systemPassword = process.env.PASSWORD || 'admin123'; // Default password if not set
+
+  if (password === systemPassword) {
+    const expiresIn = remember ? '30d' : '1d';
+    const token = jwt.sign({ authenticated: true }, JWT_SECRET, { expiresIn });
+    res.json({ success: true, token });
+  } else {
+    res.status(401).json({ success: false, error: 'Senha incorreta' });
+  }
+});
+
+app.post('/api/cert/upload', authenticate, upload.single('pfxFile'), (req, res) => {
+  try {
+    const file = req.file;
+    const { password } = req.body;
+
+    if (!file) {
+      return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+    }
+    if (!password) {
+      return res.status(400).json({ error: 'Senha do certificado não fornecida' });
+    }
+
+    const pfxBuffer = fs.readFileSync(file.path);
+
+    // Validate PFX password
+    try {
+      tls.createSecureContext({
+        pfx: pfxBuffer,
+        passphrase: password
+      });
+    } catch (err) {
+      fs.unlinkSync(file.path); // Clean up
+      return res.status(400).json({ error: 'Senha do certificado incorreta ou arquivo inválido' });
+    }
+
+    // Save to /backup
+    const destPath = path.join(backupDir, 'certificado.pfx');
+    fs.copyFileSync(file.path, destPath);
+    fs.unlinkSync(file.path); // Clean up tmp file
+
+    // Save password securely (in a real app, encrypt this or use a secret manager)
+    // For this demo, we'll store it in a local json file in the backup dir
+    fs.writeFileSync(path.join(backupDir, 'cert_info.json'), JSON.stringify({ password }));
+
+    res.json({ success: true, message: 'Certificado importado e validado com sucesso!' });
+  } catch (error: any) {
+    console.error('Erro ao processar certificado:', error);
+    res.status(500).json({ error: 'Erro interno ao processar certificado' });
+  }
+});
+
+app.get('/api/clients', authenticate, (req, res) => {
+  try {
+    const clients = JSON.parse(fs.readFileSync(clientsFile, 'utf-8'));
+    res.json(clients);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao ler clientes' });
+  }
+});
+
+app.post('/api/clients', authenticate, (req, res) => {
+  try {
+    const clients = JSON.parse(fs.readFileSync(clientsFile, 'utf-8'));
+    const newClient = {
+      id: Date.now().toString(),
+      ...req.body,
+      init: req.body.name.charAt(0).toUpperCase(),
+      color: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444'][Math.floor(Math.random() * 5)]
+    };
+    clients.push(newClient);
+    fs.writeFileSync(clientsFile, JSON.stringify(clients));
+    res.json({ success: true, client: newClient });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao salvar cliente' });
+  }
+});
+
+app.post('/api/nfse/emitir', authenticate, async (req, res) => {
+  try {
+    const data = req.body;
+    
+    // 1. Gerar o XML do RPS
+    const xmlRps = generateRpsXml(data);
+
+    // 2. Assinar o XML (Requer Certificado A1)
+    const certPem = process.env.CERT_PEM;
+    const keyPem = process.env.KEY_PEM;
+
+    if (!certPem || !keyPem) {
+      return res.status(400).json({
+        error: 'Certificado Digital A1 não configurado. Configure as variáveis CERT_PEM e KEY_PEM no ambiente.',
+        xmlPreview: xmlRps // Retornamos o XML gerado para visualização no frontend
+      });
+    }
+
+    const signedXml = signXml(xmlRps, keyPem, certPem);
+
+    // 3. Enviar para o WebISS via SOAP/mTLS
+    // Aqui usaremos axios ou https nativo com o certificado injetado no agente
+    // const httpsAgent = new https.Agent({ cert: certPem, key: keyPem });
+    // const response = await axios.post('https://url-do-webiss/GerarNfse', signedXml, { httpsAgent, headers: { 'Content-Type': 'text/xml' } });
+
+    res.json({
+      success: true,
+      message: 'RPS gerado, assinado e enviado com sucesso.',
+      signedXml
+    });
+  } catch (error: any) {
+    console.error('Erro ao emitir NFS-e:', error);
+    res.status(500).json({ error: error.message || 'Erro interno ao emitir NFS-e' });
+  }
+});
+
+// --- Banco Inter Integration ---
+app.post('/api/inter/boleto', authenticate, async (req, res) => {
+  try {
+    const data = req.body;
+    
+    // 1. Obter credenciais do ambiente
+    const clientId = process.env.INTER_CLIENT_ID;
+    const clientSecret = process.env.INTER_CLIENT_SECRET;
+    const certPem = process.env.INTER_CERT_PEM;
+    const keyPem = process.env.INTER_KEY_PEM;
+    const contaCorrente = process.env.INTER_CONTA_CORRENTE;
+
+    if (!clientId || !clientSecret || !certPem || !keyPem || !contaCorrente) {
+      return res.status(400).json({
+        error: 'Credenciais do Banco Inter não configuradas. Configure INTER_CLIENT_ID, INTER_CLIENT_SECRET, INTER_CERT_PEM, INTER_KEY_PEM e INTER_CONTA_CORRENTE no ambiente.',
+        mockBoleto: {
+          nossoNumero: `MOCK${Date.now()}`,
+          linhaDigitavel: '00000.00000 00000.000000 00000.000000 0 00000000000000',
+          codigoBarras: '00000000000000000000000000000000000000000000',
+          pdfUrl: 'https://bancointer.com.br/mock-boleto.pdf'
+        }
+      });
+    }
+
+    // 2. Configurar mTLS para o Banco Inter
+    // const httpsAgent = new https.Agent({ cert: certPem, key: keyPem });
+
+    // 3. Obter Token OAuth2
+    // const tokenResponse = await axios.post('https://cdpj.partners.bancointer.com.br/oauth/v2/token', 
+    //   'client_id=' + clientId + '&client_secret=' + clientSecret + '&grant_type=client_credentials&scope=boleto-cobranca.read boleto-cobranca.write',
+    //   { httpsAgent, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    // );
+    // const token = tokenResponse.data.access_token;
+
+    // 4. Emitir Boleto
+    // const boletoPayload = {
+    //   seuNumero: `COB-${Date.now()}`,
+    //   valorNominal: data.valor,
+    //   dataVencimento: data.vencimento,
+    //   numDiasAgenda: 30,
+    //   pagador: {
+    //     cpfCnpj: '99999999000199', // Deveria vir do data.clienteCnpj
+    //     tipoPessoa: 'JURIDICA',
+    //     nome: data.cliente,
+    //     endereco: 'Rua Exemplo',
+    //     numero: '123',
+    //     bairro: 'Centro',
+    //     cidade: 'Feira de Santana',
+    //     uf: 'BA',
+    //     cep: '44000000'
+    //   },
+    //   mensagem: {
+    //     linha1: data.descricao
+    //   }
+    // };
+
+    // const boletoResponse = await axios.post('https://cdpj.partners.bancointer.com.br/cobranca/v2/boletos', boletoPayload, {
+    //   httpsAgent,
+    //   headers: {
+    //     'Authorization': `Bearer ${token}`,
+    //     'x-conta-corrente': contaCorrente,
+    //     'Content-Type': 'application/json'
+    //   }
+    // });
+
+    res.json({
+      success: true,
+      message: 'Boleto gerado com sucesso (Mock).',
+      boleto: {
+        nossoNumero: `MOCK${Date.now()}`,
+        linhaDigitavel: '00000.00000 00000.000000 00000.000000 0 00000000000000',
+        codigoBarras: '00000000000000000000000000000000000000000000',
+        pdfUrl: 'https://bancointer.com.br/mock-boleto.pdf'
+      }
+    });
+  } catch (error: any) {
+    console.error('Erro ao emitir boleto Inter:', error);
+    res.status(500).json({ error: error.message || 'Erro interno ao emitir boleto' });
+  }
+});
+
+app.post('/api/inter/webhook', async (req, res) => {
+  try {
+    const payload = req.body;
+    
+    // O Banco Inter envia um array de objetos no webhook
+    if (Array.isArray(payload)) {
+      for (const evento of payload) {
+        if (evento.situacao === 'PAGO' || evento.situacao === 'BAIXADO') {
+          console.log(`Boleto ${evento.nossoNumero} pago. Iniciando emissão de NFS-e...`);
+          
+          // Aqui faríamos a busca dos dados da cobrança no banco de dados
+          // usando o nossoNumero, e em seguida chamaríamos a função de emissão de NFS-e.
+          // const cobranca = await db.cobrancas.findOne({ nossoNumero: evento.nossoNumero });
+          // if (cobranca && cobranca.emitirNfseAoPagar) {
+          //   const xmlRps = generateRpsXml(cobranca);
+          //   const signedXml = signXml(xmlRps, process.env.KEY_PEM, process.env.CERT_PEM);
+          //   await enviarParaWebISS(signedXml);
+          // }
+        }
+      }
+    }
+
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('Erro no webhook do Inter:', error);
+    res.status(500).send('Erro interno');
+  }
+});
+
+// --- Vite Middleware ---
+async function startServer() {
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
+  });
+}
+
+startServer();

@@ -1,0 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, SFMono-Regular, monospace;
+
+  --color-brand-green: #10b981;
+  --color-brand-green-dim: #059669;
+  --color-brand-green-subtle: rgba(16,185,129,0.08);
+  --color-brand-bg: #0d1117;
+  --color-brand-surface: #161b22;
+  --color-brand-surface2: #1c2330;
+  --color-brand-surface3: #21293a;
+  --color-brand-text: #e6edf3;
+  --color-brand-muted: #7d8590;
+  --color-brand-dim: #4d5562;
+  --color-brand-border: rgba(255, 255, 255, 0.07);
+  --color-brand-border-green: rgba(16, 185, 129, 0.3);
+}
+
+body {
+  background-color: var(--color-brand-bg);
+  color: var(--color-brand-text);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-brand-surface3); border-radius: 10px; }
