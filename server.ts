@@ -36,6 +36,16 @@ if (!fs.existsSync(clientsFile)) {
   ]));
 }
 
+// Ensure settings file exists
+const settingsFile = path.join(backupDir, 'settings.json');
+if (!fs.existsSync(settingsFile)) {
+  fs.writeFileSync(settingsFile, JSON.stringify({
+    interClientId: '',
+    interClientSecret: '',
+    interContaCorrente: ''
+  }));
+}
+
 const upload = multer({ dest: path.join(process.cwd(), 'tmp') });
 
 app.use(express.json());
@@ -209,6 +219,26 @@ app.post('/api/clients', authenticate, (req, res) => {
   }
 });
 
+app.get('/api/settings', authenticate, (req, res) => {
+  try {
+    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    res.json(settings);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao ler configurações' });
+  }
+});
+
+app.post('/api/settings', authenticate, (req, res) => {
+  try {
+    const currentSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    const newSettings = { ...currentSettings, ...req.body };
+    fs.writeFileSync(settingsFile, JSON.stringify(newSettings));
+    res.json({ success: true, settings: newSettings });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao salvar configurações' });
+  }
+});
+
 app.post('/api/nfse/emitir', authenticate, async (req, res) => {
   try {
     const data = req.body;
@@ -250,16 +280,21 @@ app.post('/api/inter/boleto', authenticate, async (req, res) => {
   try {
     const data = req.body;
     
-    // 1. Obter credenciais do ambiente
-    const clientId = process.env.INTER_CLIENT_ID;
-    const clientSecret = process.env.INTER_CLIENT_SECRET;
-    const certPem = process.env.INTER_CERT_PEM;
-    const keyPem = process.env.INTER_KEY_PEM;
-    const contaCorrente = process.env.INTER_CONTA_CORRENTE;
+    // 1. Obter credenciais do ambiente e do settings.json
+    let settings: any = {};
+    if (fs.existsSync(settingsFile)) {
+      settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    }
 
-    if (!clientId || !clientSecret || !certPem || !keyPem || !contaCorrente) {
+    const clientId = settings.interClientId || process.env.INTER_CLIENT_ID;
+    const clientSecret = settings.interClientSecret || process.env.INTER_CLIENT_SECRET;
+    const contaCorrente = settings.interContaCorrente || process.env.INTER_CONTA_CORRENTE;
+    const certPem = process.env.INTER_CERT_PEM; // Ainda mantido no env ou pode usar o PFX importado
+    const keyPem = process.env.INTER_KEY_PEM;
+
+    if (!clientId || !clientSecret || !contaCorrente) {
       return res.status(400).json({
-        error: 'Credenciais do Banco Inter não configuradas. Configure INTER_CLIENT_ID, INTER_CLIENT_SECRET, INTER_CERT_PEM, INTER_KEY_PEM e INTER_CONTA_CORRENTE no ambiente.',
+        error: 'Credenciais do Banco Inter não configuradas. Configure-as na aba Configurações.',
         mockBoleto: {
           nossoNumero: `MOCK${Date.now()}`,
           linhaDigitavel: '00000.00000 00000.000000 00000.000000 0 00000000000000',
