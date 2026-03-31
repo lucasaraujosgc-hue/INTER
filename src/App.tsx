@@ -19,7 +19,6 @@ import WebIss from './components/WebIss';
 import Relatorios from './components/Relatorios';
 
 // --- DATA ---
-const cobrancas: any[] = [];
 const activities: any[] = [];
 const barData = [
   {label:'Ago',val:0, pct:0},
@@ -37,6 +36,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('Dashboard');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const storedToken = localStorage.getItem('vc_token') || sessionStorage.getItem('vc_token');
@@ -62,15 +62,15 @@ export default function App() {
         <Topbar title={activeTab} onNew={() => setIsModalOpen(true)} />
         <main className="flex-1 overflow-y-auto p-6">
           {activeTab === 'Dashboard' ? (
-            <Dashboard filter={filter} setFilter={setFilter} token={token} />
+            <Dashboard filter={filter} setFilter={setFilter} token={token} refreshKey={refreshKey} />
           ) : activeTab === 'Configurações' ? (
             <Configuracoes token={token} />
           ) : activeTab === 'Clientes' ? (
             <Clientes token={token} />
           ) : activeTab === 'Cobranças' ? (
-            <Cobrancas token={token} />
+            <Cobrancas token={token} refreshKey={refreshKey} />
           ) : activeTab === 'NFS-e' ? (
-            <Nfse token={token} />
+            <Nfse token={token} refreshKey={refreshKey} setRefreshKey={setRefreshKey} />
           ) : activeTab === 'Banco Inter' ? (
             <BancoInter token={token} />
           ) : activeTab === 'WebISS' ? (
@@ -84,7 +84,7 @@ export default function App() {
           )}
         </main>
       </div>
-      {isModalOpen && <NewChargeModal onClose={() => setIsModalOpen(false)} token={token} />}
+      {isModalOpen && <NewChargeModal onClose={() => setIsModalOpen(false)} onSuccess={() => setRefreshKey(k => k + 1)} token={token} />}
     </div>
   );
 }
@@ -196,15 +196,32 @@ function Topbar({ title, onNew }: { title: string, onNew: () => void }) {
   );
 }
 
-function Dashboard({ filter, setFilter, token }: { filter: string, setFilter: (f: string) => void, token: string }) {
+function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, setFilter: (f: string) => void, token: string, refreshKey: number }) {
   const [clients, setClients] = useState<any[]>([]);
+  const [cobrancas, setCobrancas] = useState<any[]>([]);
+  const [nfses, setNfses] = useState<any[]>([]);
 
   useEffect(() => {
     fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } })
       .then(res => res.json())
       .then(data => setClients(data))
       .catch(console.error);
-  }, [token]);
+
+    fetch('/api/cobrancas', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => setCobrancas(data))
+      .catch(console.error);
+
+    fetch('/api/nfse', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => setNfses(data))
+      .catch(console.error);
+  }, [token, refreshKey]);
+
+  const received = cobrancas.filter(c => c.status === 'paid').reduce((acc, c) => acc + c.value, 0);
+  const pending = cobrancas.filter(c => c.status === 'pending').reduce((acc, c) => acc + c.value, 0);
+  const overdue = cobrancas.filter(c => c.status === 'overdue').reduce((acc, c) => acc + c.value, 0);
+  const nfseIssued = nfses.length;
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -212,7 +229,7 @@ function Dashboard({ filter, setFilter, token }: { filter: string, setFilter: (f
       <div className="grid grid-cols-4 gap-3.5">
         <KpiCard 
           title="Recebido (mês)" 
-          value="R$ 0,00" 
+          value={`R$ ${received.toLocaleString('pt-BR', {minimumFractionDigits:2})}`} 
           icon={TrendingUp} 
           color="green" 
           delta="0% vs mês anterior" 
@@ -221,27 +238,27 @@ function Dashboard({ filter, setFilter, token }: { filter: string, setFilter: (f
         />
         <KpiCard 
           title="A Receber" 
-          value="R$ 0,00" 
+          value={`R$ ${pending.toLocaleString('pt-BR', {minimumFractionDigits:2})}`} 
           icon={Clock} 
           color="amber" 
-          delta="0 cobranças pendentes" 
+          delta={`${cobrancas.filter(c => c.status === 'pending').length} cobranças pendentes`} 
           deltaType="neutral" 
           progress={0} 
         />
         <KpiCard 
           title="Inadimplente" 
-          value="R$ 0,00" 
+          value={`R$ ${overdue.toLocaleString('pt-BR', {minimumFractionDigits:2})}`} 
           icon={AlertCircle} 
           color="red" 
-          delta="0 clientes em atraso" 
+          delta={`${cobrancas.filter(c => c.status === 'overdue').length} clientes em atraso`} 
           deltaType="neutral" 
         />
         <KpiCard 
           title="NFS-e Emitidas" 
-          value="0" 
+          value={nfseIssued.toString()} 
           icon={Receipt} 
           color="blue" 
-          delta="Mês atual · 0 pendentes" 
+          delta={`Mês atual · ${cobrancas.filter(c => c.nfse === 'pend').length} pendentes`} 
           deltaType="neutral" 
         />
       </div>
@@ -310,8 +327,7 @@ function Dashboard({ filter, setFilter, token }: { filter: string, setFilter: (f
                         {c.boleto ? <span className="text-brand-green">✓ Gerado</span> : <span className="text-brand-dim">—</span>}
                       </td>
                       <td className="px-4 py-3 text-[12.5px] font-medium">
-                        {c.nfse === 'ok' ? <span className="text-brand-green">✓ Emitida</span> : 
-                         c.nfse === 'pend' ? <span className="text-amber-500">⏳ Aguardando</span> : 
+                        {c.nfse ? <span className="text-brand-green">✓ Emitida</span> : 
                          <span className="text-brand-dim">—</span>}
                       </td>
                       <td className="px-4 py-3">
@@ -507,7 +523,7 @@ function FlowStep({ num, text, state }: { num: string, text: string, state: stri
   );
 }
 
-function NewChargeModal({ onClose, token }: { onClose: () => void, token: string }) {
+function NewChargeModal({ onClose, onSuccess, token }: { onClose: () => void, onSuccess: () => void, token: string }) {
   const [toggles, setToggles] = useState({ boleto: true, nfse: true, email: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -543,49 +559,25 @@ function NewChargeModal({ onClose, token }: { onClose: () => void, token: string
     setXmlPreview('');
 
     try {
-      let message = 'Cobrança criada com sucesso!';
-
-      // 1. Gerar Boleto via Banco Inter
-      if (toggles.boleto) {
-        const resInter = await fetch('/api/inter/boleto', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify(formData)
-        });
-        const dataInter = await resInter.json();
-        
-        if (!resInter.ok) {
-          throw new Error(dataInter.error || 'Erro ao gerar boleto no Banco Inter');
+      const res = await fetch('/api/cobrancas', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ ...formData, toggles })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        if (data.xmlPreview) {
+          setXmlPreview(data.xmlPreview);
         }
-        message += ' Boleto gerado.';
+        throw new Error(data.error || 'Erro ao criar cobrança');
       }
 
-      // 2. Emitir NFS-e (Para fins de teste, emitimos agora se o toggle estiver ativo, 
-      // na prática seria via webhook do Inter ao confirmar pagamento)
-      if (toggles.nfse) {
-        const resNfse = await fetch('/api/nfse/emitir', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify(formData)
-        });
-        const dataNfse = await resNfse.json();
-        
-        if (!resNfse.ok) {
-          if (dataNfse.xmlPreview) {
-            setXmlPreview(dataNfse.xmlPreview);
-          }
-          throw new Error(dataNfse.error || 'Erro ao emitir NFS-e');
-        }
-        message += ' NFS-e emitida.';
-      }
-
-      setSuccess(message);
+      setSuccess(data.message || 'Cobrança criada com sucesso!');
+      onSuccess();
       setTimeout(() => {
         onClose();
       }, 2000);
@@ -717,8 +709,8 @@ function NewChargeModal({ onClose, token }: { onClose: () => void, token: string
               onToggle={() => setToggles(p => ({...p, boleto: !p.boleto}))} 
             />
             <ToggleRow 
-              label="Emitir NFS-e ao pagar" 
-              desc="Aciona WebISS via SOAP automaticamente" 
+              label="Emitir NFS-e" 
+              desc="Aciona WebISS via SOAP para emissão" 
               isOn={toggles.nfse} 
               onToggle={() => setToggles(p => ({...p, nfse: !p.nfse}))} 
             />

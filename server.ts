@@ -41,6 +41,16 @@ if (!fs.existsSync(settingsFile)) {
   }));
 }
 
+const cobrancasFile = path.join(backupDir, 'cobrancas.json');
+if (!fs.existsSync(cobrancasFile)) {
+  fs.writeFileSync(cobrancasFile, JSON.stringify([]));
+}
+
+const nfseFile = path.join(backupDir, 'nfse.json');
+if (!fs.existsSync(nfseFile)) {
+  fs.writeFileSync(nfseFile, JSON.stringify([]));
+}
+
 const upload = multer({ dest: path.join(process.cwd(), 'tmp') });
 
 app.use(express.json());
@@ -72,10 +82,10 @@ function generateRpsXml(data: any) {
           <ValorIss>${(data.valor * (data.aliquota / 100)).toFixed(2)}</ValorIss>
           <Aliquota>${data.aliquota.toFixed(2)}</Aliquota>
         </Valores>
-        <ItemListaServico>${data.itemLc116}</ItemListaServico>
+        <ItemListaServico>${data.itemLc116 || '17.19'}</ItemListaServico>
         <CodigoTributacaoMunicipio>123456</CodigoTributacaoMunicipio>
         <Discriminacao>${data.descricao}</Discriminacao>
-        <CodigoMunicipio>2910800</CodigoMunicipio> <!-- Feira de Santana/BA -->
+        <CodigoMunicipio>2910800</CodigoMunicipio>
         <ExigibilidadeISS>1</ExigibilidadeISS>
         <MunicipioIncidencia>2910800</MunicipioIncidencia>
       </Servico>
@@ -93,6 +103,8 @@ function generateRpsXml(data: any) {
         </IdentificacaoTomador>
         <RazaoSocial>${data.cliente}</RazaoSocial>
       </Tomador>
+      <OptanteSimplesNacional>1</OptanteSimplesNacional>
+      <IncentivoFiscal>2</IncentivoFiscal>
     </InfDeclaracaoPrestacaoServico>
   </Rps>
 </GerarNfseEnvio>`;
@@ -256,6 +268,126 @@ app.post('/api/settings', authenticate, (req, res) => {
   }
 });
 
+app.get('/api/cobrancas', authenticate, (req, res) => {
+  try {
+    const cobrancas = JSON.parse(fs.readFileSync(cobrancasFile, 'utf-8'));
+    res.json(cobrancas);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao ler cobranças' });
+  }
+});
+
+app.post('/api/cobrancas', authenticate, async (req, res) => {
+  try {
+    const data = req.body;
+    const { toggles } = data;
+    
+    let message = 'Cobrança criada com sucesso!';
+    let boletoData = null;
+    let nfseData = null;
+    let xmlPreview = null;
+
+    // 1. Gerar Boleto via Banco Inter
+    if (toggles?.boleto) {
+      let settings: any = {};
+      if (fs.existsSync(settingsFile)) {
+        settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+      }
+
+      const clientId = settings.interClientId || process.env.INTER_CLIENT_ID;
+      const clientSecret = settings.interClientSecret || process.env.INTER_CLIENT_SECRET;
+      const contaCorrente = settings.interContaCorrente || process.env.INTER_CONTA_CORRENTE;
+
+      if (!clientId || !clientSecret || !contaCorrente) {
+        return res.status(400).json({
+          error: 'Credenciais do Banco Inter não configuradas. Configure-as na aba Configurações.'
+        });
+      }
+
+      // Mock boleto generation
+      boletoData = {
+        nossoNumero: `MOCK${Date.now()}`,
+        linhaDigitavel: '00000.00000 00000.000000 00000.000000 0 00000000000000',
+        codigoBarras: '00000000000000000000000000000000000000000000',
+        pdfUrl: 'https://bancointer.com.br/mock-boleto.pdf'
+      };
+      message += ' Boleto gerado.';
+    }
+
+    // 2. Emitir NFS-e
+    if (toggles?.nfse) {
+      const xmlRps = generateRpsXml(data);
+      let certPem = process.env.CERT_PEM;
+      let keyPem = process.env.KEY_PEM;
+
+      const certPath = path.join(backupDir, 'cert.pem');
+      const keyPath = path.join(backupDir, 'key.pem');
+
+      if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+        certPem = fs.readFileSync(certPath, 'utf-8');
+        keyPem = fs.readFileSync(keyPath, 'utf-8');
+      }
+
+      if (!certPem || !keyPem) {
+        return res.status(400).json({
+          error: 'Certificado Digital A1 não configurado. Faça o upload do arquivo .pfx nas configurações.',
+          xmlPreview: xmlRps
+        });
+      }
+
+      const signedXml = signXml(xmlRps, keyPem, certPem);
+      
+      const nfseList = JSON.parse(fs.readFileSync(nfseFile, 'utf-8'));
+      nfseData = {
+        id: `NFS-${Date.now()}`,
+        client: data.clienteId || data.cliente,
+        clientName: data.cliente,
+        value: data.valor,
+        issueDate: new Date().toISOString().split('T')[0],
+        status: 'issued',
+        xml: signedXml
+      };
+      nfseList.push(nfseData);
+      fs.writeFileSync(nfseFile, JSON.stringify(nfseList));
+      
+      message += ' NFS-e emitida.';
+    }
+
+    // 3. Salvar Cobrança
+    const cobrancasList = JSON.parse(fs.readFileSync(cobrancasFile, 'utf-8'));
+    const newCobranca = {
+      id: `COB-${Date.now()}`,
+      client: data.clienteId || data.cliente,
+      clientName: data.cliente,
+      value: data.valor,
+      due: data.vencimento,
+      status: 'pending',
+      boleto: boletoData,
+      nfse: nfseData ? nfseData.id : null
+    };
+    cobrancasList.push(newCobranca);
+    fs.writeFileSync(cobrancasFile, JSON.stringify(cobrancasList));
+
+    res.json({
+      success: true,
+      message,
+      cobranca: newCobranca
+    });
+  } catch (error: any) {
+    console.error('Erro ao criar cobrança:', error);
+    res.status(500).json({ error: error.message || 'Erro interno ao criar cobrança' });
+  }
+});
+
+app.get('/api/nfse', authenticate, (req, res) => {
+  try {
+    const nfse = JSON.parse(fs.readFileSync(nfseFile, 'utf-8'));
+    res.json(nfse);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao ler notas fiscais' });
+  }
+});
+
 app.post('/api/nfse/emitir', authenticate, async (req, res) => {
   try {
     const data = req.body;
@@ -289,10 +421,25 @@ app.post('/api/nfse/emitir', authenticate, async (req, res) => {
     // const httpsAgent = new https.Agent({ cert: certPem, key: keyPem });
     // const response = await axios.post('https://url-do-webiss/GerarNfse', signedXml, { httpsAgent, headers: { 'Content-Type': 'text/xml' } });
 
+    // 4. Salvar a nota fiscal no banco de dados local
+    const nfseList = JSON.parse(fs.readFileSync(nfseFile, 'utf-8'));
+    const newNfse = {
+      id: `NFS-${Date.now()}`,
+      client: data.clienteId || data.cliente,
+      clientName: data.cliente,
+      value: data.valor,
+      issueDate: new Date().toISOString().split('T')[0],
+      status: 'issued',
+      xml: signedXml
+    };
+    nfseList.push(newNfse);
+    fs.writeFileSync(nfseFile, JSON.stringify(nfseList));
+
     res.json({
       success: true,
       message: 'RPS gerado, assinado e enviado com sucesso.',
-      signedXml
+      signedXml,
+      nfse: newNfse
     });
   } catch (error: any) {
     console.error('Erro ao emitir NFS-e:', error);

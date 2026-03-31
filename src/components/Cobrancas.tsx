@@ -1,16 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Loader2, Search, Plus, Eye, Receipt, Mail } from 'lucide-react';
 
-export default function Cobrancas({ token }: { token: string }) {
+export default function Cobrancas({ token, refreshKey }: { token: string, refreshKey?: number }) {
   const [cobrancas, setCobrancas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Fetch cobrancas from backend
-    // For now, empty array
-    setCobrancas([]);
-    setLoading(false);
-  }, [token]);
+    fetch('/api/cobrancas', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => {
+        setCobrancas(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, [token, refreshKey]);
 
   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-brand-green" /></div>;
 
@@ -39,13 +45,15 @@ export default function Cobrancas({ token }: { token: string }) {
               <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Valor</th>
               <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Vencimento</th>
               <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Status</th>
+              <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Boleto</th>
+              <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">NFS-e</th>
               <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Ações</th>
             </tr>
           </thead>
           <tbody>
             {cobrancas.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-brand-muted">
+                <td colSpan={8} className="px-6 py-8 text-center text-brand-muted">
                   <FileText size={48} className="mx-auto mb-4 opacity-20" />
                   <p>Nenhuma cobrança encontrada.</p>
                 </td>
@@ -56,11 +64,17 @@ export default function Cobrancas({ token }: { token: string }) {
                   <td className="px-6 py-4 text-brand-muted font-mono text-sm">{c.id}</td>
                   <td className="px-6 py-4 font-medium text-brand-text">{c.clientName}</td>
                   <td className="px-6 py-4 font-mono text-sm">R$ {c.value.toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
-                  <td className="px-6 py-4 text-brand-muted text-sm">{c.due}</td>
+                  <td className="px-6 py-4 text-brand-muted text-sm">{c.due.split('-').reverse().join('/')}</td>
                   <td className="px-6 py-4">
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand-surface3 text-brand-muted">
                       {c.status}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 text-[12.5px]">
+                    {c.boleto ? <span className="text-brand-green">✓ Gerado</span> : <span className="text-brand-dim">—</span>}
+                  </td>
+                  <td className="px-6 py-4 text-[12.5px] font-medium">
+                    {c.nfse ? <span className="text-brand-green">✓ Emitida</span> : <span className="text-brand-dim">—</span>}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">
