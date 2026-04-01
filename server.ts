@@ -57,56 +57,111 @@ app.use(express.json());
 
 // --- ABRASF v2.04 XML Generation & Signing ---
 function generateRpsXml(data: any, settings: any) {
-  // Geração do XML do RPS seguindo o padrão ABRASF v2.04
+  // Geração do XML do RPS seguindo o padrão ABRASF v2.02 Adaptações do Padrão Nacional
   // O atributo Id é obrigatório para a assinatura digital
   const idRps = `RPS_${Date.now()}`;
   
+  const tomadorCpfCnpj = data.clienteCpfCnpj ? data.clienteCpfCnpj.replace(/\D/g, '') : '99999999000199';
+  const isCpf = tomadorCpfCnpj.length === 11;
+  const cpfCnpjTag = isCpf ? `<Cpf>${tomadorCpfCnpj}</Cpf>` : `<Cnpj>${tomadorCpfCnpj}</Cnpj>`;
+
   return `<?xml version="1.0" encoding="UTF-8"?>
-<GerarNfseEnvio xmlns="http://www.abrasf.org.br/nfse.xsd">
-  <Rps>
-    <InfDeclaracaoPrestacaoServico Id="${idRps}">
-      <Rps>
-        <IdentificacaoRps>
-          <Numero>${Math.floor(Math.random() * 10000)}</Numero>
-          <Serie>UNICA</Serie>
-          <Tipo>1</Tipo>
-        </IdentificacaoRps>
-        <DataEmissao>${new Date().toISOString().split('.')[0]}</DataEmissao>
-        <Status>1</Status>
-      </Rps>
-      <Competencia>${new Date().toISOString().split('T')[0]}</Competencia>
-      <Servico>
-        <Valores>
-          <ValorServicos>${data.valor.toFixed(2)}</ValorServicos>
-          <IssRetido>2</IssRetido>
-          <ValorIss>${(data.valor * (data.aliquota / 100)).toFixed(2)}</ValorIss>
-          <Aliquota>${data.aliquota.toFixed(2)}</Aliquota>
-        </Valores>
-        <ItemListaServico>${data.itemLc116 || '17.19'}</ItemListaServico>
-        <CodigoTributacaoMunicipio>${settings.codigoMunicipio || '123456'}</CodigoTributacaoMunicipio>
-        <Discriminacao>${data.descricao}</Discriminacao>
-        <CodigoMunicipio>${settings.codigoMunicipio || '2910800'}</CodigoMunicipio>
-        <ExigibilidadeISS>1</ExigibilidadeISS>
-        <MunicipioIncidencia>${settings.codigoMunicipio || '2910800'}</MunicipioIncidencia>
-      </Servico>
-      <Prestador>
-        <CpfCnpj>
-          <Cnpj>${(settings.prestadorCnpj || '00000000000100').replace(/\D/g, '')}</Cnpj>
-        </CpfCnpj>
-        <InscricaoMunicipal>${settings.prestadorIm || '12345'}</InscricaoMunicipal>
-      </Prestador>
-      <Tomador>
-        <IdentificacaoTomador>
-          <CpfCnpj>
-            <Cnpj>99999999000199</Cnpj>
-          </CpfCnpj>
-        </IdentificacaoTomador>
-        <RazaoSocial>${data.cliente}</RazaoSocial>
-      </Tomador>
-      <OptanteSimplesNacional>1</OptanteSimplesNacional>
-      <IncentivoFiscal>2</IncentivoFiscal>
-    </InfDeclaracaoPrestacaoServico>
-  </Rps>
+<GerarNfseEnvio xmlns="http://www.abrasf.org.br/nfse.xsd"
+                xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
+                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                xsi:schemaLocation="http://www.abrasf.org.br/nfse.xsd  ">
+	<Rps>
+		<InfDeclaracaoPrestacaoServico>
+			<Rps Id="${idRps}">
+				<IdentificacaoRps>
+					<Numero>${Math.floor(Math.random() * 10000)}</Numero>
+					<Serie>UNICA</Serie>
+					<Tipo>1</Tipo>
+				</IdentificacaoRps>
+				<DataEmissao>${new Date().toISOString().split('.')[0]}</DataEmissao>
+				<Status>1</Status>
+			</Rps>
+			<Competencia>${new Date().toISOString().split('T')[0]}</Competencia>
+			<Servico>
+				<Valores>
+					<ValorServicos>${data.valor.toFixed(2)}</ValorServicos>
+					<ValorDeducoes>0.00</ValorDeducoes>
+					<ValorPis>0.00</ValorPis>
+					<ValorCofins>0.00</ValorCofins>
+					<ValorInss>0.00</ValorInss>
+					<ValorIr>0.00</ValorIr>
+					<ValorCsll>0.00</ValorCsll>
+					<OutrasRetencoes>0.00</OutrasRetencoes>
+					<ValorIss>${(data.valor * (data.aliquota / 100)).toFixed(2)}</ValorIss>
+					<Aliquota>${data.aliquota.toFixed(2)}</Aliquota>
+					<DescontoIncondicionado>0.00</DescontoIncondicionado>
+					<DescontoCondicionado>0.00</DescontoCondicionado>
+				</Valores>
+				<IssRetido>2</IssRetido>
+				<ResponsavelRetencao></ResponsavelRetencao>
+				<ItemListaServico>${data.itemLc116 || '17.19'}</ItemListaServico>
+				<CodigoCnae></CodigoCnae>
+				<CodigoTributacaoMunicipio>${settings.codigoMunicipio || '123456'}</CodigoTributacaoMunicipio>
+				<CodigoNbs></CodigoNbs>
+				<Discriminacao>${data.descricao}</Discriminacao>
+				<CodigoMunicipio>${settings.codigoMunicipio || '2910800'}</CodigoMunicipio>
+				<CodigoPais>1058</CodigoPais>
+				<ExigibilidadeISS>1</ExigibilidadeISS>
+				<MunicipioIncidencia>${settings.codigoMunicipio || '2910800'}</MunicipioIncidencia>
+				<NumeroProcesso></NumeroProcesso>
+			</Servico>
+			<Prestador>
+				<CpfCnpj>
+					<Cnpj>${(settings.prestadorCnpj || '00000000000100').replace(/\D/g, '')}</Cnpj>
+				</CpfCnpj>
+				<InscricaoMunicipal>${settings.prestadorIm || '12345'}</InscricaoMunicipal>
+			</Prestador>
+			<Tomador>
+				<IdentificacaoTomador>
+					<CpfCnpj>
+						${cpfCnpjTag}
+					</CpfCnpj>
+					<InscricaoMunicipal></InscricaoMunicipal>
+				</IdentificacaoTomador>
+				<RazaoSocial>${data.cliente}</RazaoSocial>
+				<Endereco>
+					<Endereco></Endereco>
+					<Numero></Numero>
+					<Complemento></Complemento>
+					<Bairro></Bairro>
+					<CodigoMunicipio></CodigoMunicipio>
+					<Uf></Uf>
+					<CodigoPais></CodigoPais>
+					<Cep></Cep>
+				</Endereco>
+				<Contato>
+					<Telefone></Telefone>
+					<Email></Email>
+				</Contato>
+			</Tomador>
+			<ConstrucaoCivil>
+				<CodigoObra></CodigoObra>
+				<Art></Art>
+			</ConstrucaoCivil>
+			<RegimeEspecialTributacao></RegimeEspecialTributacao>
+			<OptanteSimplesNacional>1</OptanteSimplesNacional>
+			<IncentivoFiscal>2</IncentivoFiscal>
+			<IBSCBS>
+				<finNFSe></finNFSe>
+				<indFinal></indFinal>
+				<cIndOp></cIndOp>
+				<indDest></indDest>
+				<valores>
+					<trib>
+						<gIBSCBS>
+							<CST></CST>
+							<cClassTrib></cClassTrib>
+						</gIBSCBS>
+					</trib>
+				</valores>
+			</IBSCBS>
+		</InfDeclaracaoPrestacaoServico>
+	</Rps>
 </GerarNfseEnvio>`;
 }
 
