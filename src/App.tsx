@@ -531,21 +531,36 @@ function NewChargeModal({ onClose, onSuccess, token }: { onClose: () => void, on
   const [xmlPreview, setXmlPreview] = useState('');
   const [clients, setClients] = useState<any[]>([]);
 
-  useEffect(() => {
-    fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
-      .then(data => setClients(data))
-      .catch(console.error);
-  }, [token]);
-
   const [formData, setFormData] = useState({
     cliente: '',
     valor: 3200,
     vencimento: new Date(Date.now() + 30*86400000).toISOString().split('T')[0],
     descricao: 'Honorários contábeis referente à competência Janeiro/2025',
-    itemLc116: '17.19',
-    aliquota: 3.00
+    itemLc116: '',
+    aliquota: 0,
+    codigoTributacaoMunicipio: '',
+    cnae: ''
   });
+
+  useEffect(() => {
+    fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => setClients(data))
+      .catch(console.error);
+
+    fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => {
+        setFormData(prev => ({
+          ...prev,
+          itemLc116: data.itemLc116 || '17.19',
+          aliquota: data.aliquota || 3.00,
+          codigoTributacaoMunicipio: data.codigoTributacaoMunicipio || '',
+          cnae: data.cnae || ''
+        }));
+      })
+      .catch(console.error);
+  }, [token]);
 
   const handleSave = async () => {
     if (!formData.cliente) {
@@ -671,27 +686,46 @@ function NewChargeModal({ onClose, onSuccess, token }: { onClose: () => void, on
                 className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full min-h-[70px] resize-y" 
               />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Item LC 116/03</label>
-              <select 
-                value={formData.itemLc116}
-                onChange={e => setFormData({...formData, itemLc116: e.target.value})}
-                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full"
-              >
-                <option value="17.19">17.19 — Serviços contábeis</option>
-                <option value="17.01">17.01 — Assessoria técnica</option>
-                <option value="17.06">17.06 — Auditoria e análise</option>
-                <option value="17.20">17.20 — Assessoria empresarial</option>
-              </select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Alíquota ISS (%)</label>
-              <input 
-                type="number" 
-                value={formData.aliquota}
-                onChange={e => setFormData({...formData, aliquota: parseFloat(e.target.value) || 0})}
-                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full" 
-              />
+            <div className="col-span-2 grid grid-cols-2 gap-3.5">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Item LC 116/03</label>
+                <input 
+                  type="text" 
+                  value={formData.itemLc116}
+                  onChange={e => setFormData({...formData, itemLc116: e.target.value})}
+                  placeholder="Ex: 17.19"
+                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full" 
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Alíquota ISS (%)</label>
+                <input 
+                  type="number" 
+                  value={formData.aliquota}
+                  onChange={e => setFormData({...formData, aliquota: parseFloat(e.target.value) || 0})}
+                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full" 
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Cód. Tributação</label>
+                <input 
+                  type="text" 
+                  value={formData.codigoTributacaoMunicipio}
+                  onChange={e => setFormData({...formData, codigoTributacaoMunicipio: e.target.value})}
+                  placeholder="Ex: 692060100"
+                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full" 
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">CNAE</label>
+                <input 
+                  type="text" 
+                  value={formData.cnae}
+                  onChange={e => setFormData({...formData, cnae: e.target.value})}
+                  placeholder="Ex: 6920601"
+                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full" 
+                />
+              </div>
             </div>
           </div>
 

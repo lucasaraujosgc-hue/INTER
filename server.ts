@@ -66,10 +66,7 @@ function generateRpsXml(data: any, settings: any) {
   const cpfCnpjTag = isCpf ? `<Cpf>${tomadorCpfCnpj}</Cpf>` : `<Cnpj>${tomadorCpfCnpj}</Cnpj>`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<EnviarLoteRpsSincronoEnvio xmlns="http://www.abrasf.org.br/nfse.xsd"
-                            xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
-                            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                            xsi:schemaLocation="http://www.abrasf.org.br/nfse.xsd  ">
+<EnviarLoteRpsSincronoEnvio xmlns="http://www.abrasf.org.br/nfse.xsd">
 	<LoteRps Id="${idLote}" versao="2.02">
 		<NumeroLote>${Math.floor(Math.random() * 10000)}</NumeroLote>
 		<CpfCnpj>
@@ -107,10 +104,9 @@ function generateRpsXml(data: any, settings: any) {
 						</Valores>
 						<IssRetido>2</IssRetido>
 						<ResponsavelRetencao></ResponsavelRetencao>
-						<ItemListaServico>${data.itemLc116 || '17.19'}</ItemListaServico>
-						<CodigoCnae></CodigoCnae>
-						<CodigoTributacaoMunicipio>${settings.codigoMunicipio || '123456'}</CodigoTributacaoMunicipio>
-						<CodigoNbs></CodigoNbs>
+						<ItemListaServico>${data.itemLc116 || settings.itemLc116 || '17.19'}</ItemListaServico>
+						<CodigoCnae>${data.cnae || settings.cnae || ''}</CodigoCnae>
+						<CodigoTributacaoMunicipio>${data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio || ''}</CodigoTributacaoMunicipio>
 						<Discriminacao>${data.descricao}</Discriminacao>
 						<CodigoMunicipio>${settings.codigoMunicipio || '2910800'}</CodigoMunicipio>
 						<CodigoPais>1058</CodigoPais>
@@ -154,20 +150,6 @@ function generateRpsXml(data: any, settings: any) {
 					<RegimeEspecialTributacao></RegimeEspecialTributacao>
 					<OptanteSimplesNacional>1</OptanteSimplesNacional>
 					<IncentivoFiscal>2</IncentivoFiscal>
-					<IBSCBS>
-						<finNFSe></finNFSe>
-						<indFinal></indFinal>
-						<cIndOp></cIndOp>
-						<indDest></indDest>
-						<valores>
-							<trib>
-								<gIBSCBS>
-									<CST></CST>
-									<cClassTrib></cClassTrib>
-								</gIBSCBS>
-							</trib>
-						</valores>
-					</IBSCBS>
 				</InfDeclaracaoPrestacaoServico>
 			</Rps>
 		</ListaRps>
@@ -225,9 +207,16 @@ function signXml(xml: string, keyPem: string, certPem: string): string {
 
 async function sendSoapRequest(url: string, action: string, xmlBody: string, certPem: string, keyPem: string) {
   const soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <soap:Body>
-    ${xmlBody}
+    <RecepcionarLoteRpsSincrono xmlns="http://www.abrasf.org.br/nfse.xsd">
+      <cabecalho>
+        <![CDATA[<cabecalho versao="2.02" xmlns="http://www.abrasf.org.br/nfse.xsd"><versaoDados>2.02</versaoDados></cabecalho>]]>
+      </cabecalho>
+      <msg>
+        <![CDATA[${xmlBody}]]>
+      </msg>
+    </RecepcionarLoteRpsSincrono>
   </soap:Body>
 </soap:Envelope>`;
 
@@ -241,7 +230,7 @@ async function sendSoapRequest(url: string, action: string, xmlBody: string, cer
   try {
     const response = await axios.post(url, soapEnvelope, {
       headers: {
-        'Content-Type': 'text/xml;charset=UTF-8',
+        'Content-Type': 'text/xml; charset=utf-8',
         'SOAPAction': action
       },
       httpsAgent,
@@ -394,8 +383,14 @@ app.delete('/api/clients/:id', authenticate, (req, res) => {
 
 app.get('/api/settings', authenticate, (req, res) => {
   try {
-    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
-    res.json(settings);
+    let settings = {};
+    if (fs.existsSync(settingsFile)) {
+      settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    }
+    const certPath = path.join(backupDir, 'cert.pem');
+    const keyPath = path.join(backupDir, 'key.pem');
+    const hasCertificate = fs.existsSync(certPath) && fs.existsSync(keyPath);
+    res.json({ ...settings, hasCertificate });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao ler configurações' });
   }
@@ -403,7 +398,10 @@ app.get('/api/settings', authenticate, (req, res) => {
 
 app.post('/api/settings', authenticate, (req, res) => {
   try {
-    const currentSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    let currentSettings = {};
+    if (fs.existsSync(settingsFile)) {
+      currentSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    }
     const newSettings = { ...currentSettings, ...req.body };
     fs.writeFileSync(settingsFile, JSON.stringify(newSettings));
     res.json({ success: true, settings: newSettings });
@@ -563,23 +561,23 @@ app.post('/api/nfse/emitir', authenticate, async (req, res) => {
     const signedXml = signXml(xmlRps, keyPem, certPem);
 
     // 3. Enviar para o WebISS via SOAP/mTLS
-    if (settings.webserviceUrl) {
-      try {
-        const soapResponse = await sendSoapRequest(
-          settings.webserviceUrl,
-          'http://www.abrasf.org.br/nfse.xsd/RecepcionarLoteRpsSincrono',
-          signedXml,
-          certPem,
-          keyPem
-        );
-        console.log('SOAP Response:', soapResponse);
-        // Aqui você faria o parse do XML de resposta para verificar erros ou sucesso
-        // e extrair o número da NFS-e gerada.
-      } catch (soapError: any) {
-        console.error('Erro ao enviar SOAP:', soapError.message);
-        // Em um ambiente real, você poderia decidir se falha a emissão ou apenas loga o erro
-        // Para testes, vamos apenas logar e continuar
-      }
+    const webserviceUrl = 'https://saogoncalodoscamposba.webiss.com.br/ws/nfse.asmx';
+    
+    try {
+      const soapResponse = await sendSoapRequest(
+        webserviceUrl,
+        'http://www.abrasf.org.br/nfse.xsd/RecepcionarLoteRpsSincrono',
+        signedXml,
+        certPem,
+        keyPem
+      );
+      console.log('SOAP Response:', soapResponse);
+      // Aqui você faria o parse do XML de resposta para verificar erros ou sucesso
+      // e extrair o número da NFS-e gerada.
+    } catch (soapError: any) {
+      console.error('Erro ao enviar SOAP:', soapError.message);
+      // Em um ambiente real, você poderia decidir se falha a emissão ou apenas loga o erro
+      // Para testes, vamos apenas logar e continuar
     }
 
     // 4. Salvar a nota fiscal no banco de dados local
@@ -752,33 +750,11 @@ app.post('/api/inter/webhook', async (req, res) => {
   }
 });
 
-app.get('/api/settings', authenticate, (req, res) => {
-  try {
-    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
-    res.json(settings);
-  } catch (error) {
-    res.status(500).json({ error: 'Erro ao ler configurações' });
-  }
-});
 
-app.post('/api/settings', authenticate, (req, res) => {
-  try {
-    const currentSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
-    const newSettings = { ...currentSettings, ...req.body };
-    fs.writeFileSync(settingsFile, JSON.stringify(newSettings));
-    res.json({ success: true, settings: newSettings });
-  } catch (error) {
-    res.status(500).json({ error: 'Erro ao salvar configurações' });
-  }
-});
 
 app.post('/api/nfse/test-connection', authenticate, async (req, res) => {
   try {
-    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
-    const url = settings.webserviceUrl;
-    if (!url) {
-      return res.status(400).json({ error: 'URL do WebService não configurada.' });
-    }
+    const url = 'https://saogoncalodoscamposba.webiss.com.br/ws/nfse.asmx';
 
     let certPem = process.env.CERT_PEM;
     let keyPem = process.env.KEY_PEM;

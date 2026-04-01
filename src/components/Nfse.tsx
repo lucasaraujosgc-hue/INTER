@@ -169,20 +169,35 @@ function NewNfseModal({ onClose, onSuccess, token }: { onClose: () => void, onSu
   const [success, setSuccess] = useState('');
   const [clients, setClients] = useState<any[]>([]);
 
+  const [formData, setFormData] = useState({
+    cliente: '',
+    valor: 1500,
+    descricao: 'Serviços prestados',
+    itemLc116: '',
+    aliquota: 0,
+    codigoTributacaoMunicipio: '',
+    cnae: ''
+  });
+
   useEffect(() => {
     fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } })
       .then(res => res.json())
       .then(data => setClients(data))
       .catch(console.error);
-  }, [token]);
 
-  const [formData, setFormData] = useState({
-    cliente: '',
-    valor: 1500,
-    descricao: 'Serviços prestados',
-    itemLc116: '17.19',
-    aliquota: 3.00
-  });
+    fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => {
+        setFormData(prev => ({
+          ...prev,
+          itemLc116: data.itemLc116 || '17.19',
+          aliquota: data.aliquota || 3.00,
+          codigoTributacaoMunicipio: data.codigoTributacaoMunicipio || '',
+          cnae: data.cnae || ''
+        }));
+      })
+      .catch(console.error);
+  }, [token]);
 
   const handleSave = async () => {
     if (!formData.cliente) {
@@ -286,6 +301,40 @@ function NewNfseModal({ onClose, onSuccess, token }: { onClose: () => void, onSu
                   type="text" 
                   value={formData.itemLc116}
                   onChange={e => setFormData({...formData, itemLc116: e.target.value})}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Alíquota (%)</label>
+                <input 
+                  type="number" 
+                  step="0.01"
+                  value={formData.aliquota}
+                  onChange={e => setFormData({...formData, aliquota: Number(e.target.value)})}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Código Tributação</label>
+                <input 
+                  type="text" 
+                  value={formData.codigoTributacaoMunicipio}
+                  onChange={e => setFormData({...formData, codigoTributacaoMunicipio: e.target.value})}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">CNAE</label>
+                <input 
+                  type="text" 
+                  value={formData.cnae}
+                  onChange={e => setFormData({...formData, cnae: e.target.value})}
                   className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
                 />
               </div>

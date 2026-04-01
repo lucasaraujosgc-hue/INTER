@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Upload, Check, AlertCircle, Loader2, Save, Activity } from 'lucide-react';
+import { Shield, Upload, Check, AlertCircle, Loader2, Save, Activity, FileKey } from 'lucide-react';
 
 export default function WebIss({ token }: { token: string }) {
   const [file, setFile] = useState<File | null>(null);
@@ -12,8 +12,12 @@ export default function WebIss({ token }: { token: string }) {
     prestadorCnpj: '',
     prestadorIm: '',
     codigoMunicipio: '',
-    webserviceUrl: ''
+    itemLc116: '',
+    aliquota: '',
+    codigoTributacaoMunicipio: '',
+    cnae: ''
   });
+  const [hasCertificate, setHasCertificate] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [testResult, setTestResult] = useState<{success: boolean, message: string} | null>(null);
@@ -26,8 +30,13 @@ export default function WebIss({ token }: { token: string }) {
           prestadorCnpj: data.prestadorCnpj || '',
           prestadorIm: data.prestadorIm || '',
           codigoMunicipio: data.codigoMunicipio || '',
-          webserviceUrl: data.webserviceUrl || ''
+          itemLc116: data.itemLc116 || '',
+          aliquota: data.aliquota || '',
+          codigoTributacaoMunicipio: data.codigoTributacaoMunicipio || '',
+          codigoNbs: data.codigoNbs || '',
+          cnae: data.cnae || ''
         });
+        setHasCertificate(data.hasCertificate || false);
       })
       .catch(console.error);
   }, [token]);
@@ -109,6 +118,7 @@ export default function WebIss({ token }: { token: string }) {
 
       if (res.ok && data.success) {
         setSuccess(data.message);
+        setHasCertificate(true);
         setFile(null);
         setPassword('');
       } else {
@@ -122,20 +132,20 @@ export default function WebIss({ token }: { token: string }) {
   };
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-2xl mx-auto">
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-4xl mx-auto">
       <div className="flex items-center gap-3 mb-8">
         <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500">
           <Shield size={20} />
         </div>
         <div>
           <h2 className="text-xl font-bold text-brand-text">WebISS / NFS-e</h2>
-          <p className="text-sm text-brand-muted mt-1">Configuração do Certificado Digital A1</p>
+          <p className="text-sm text-brand-muted mt-1">Configuração do Certificado Digital A1 e Emissão</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-brand-surface border border-brand-border rounded-xl p-6">
-          <h3 className="text-lg font-bold text-brand-text mb-4">Dados do Prestador</h3>
+          <h3 className="text-lg font-bold text-brand-text mb-4">Dados do Prestador e Emissão</h3>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-brand-dim mb-1.5">CNPJ do Prestador</label>
@@ -167,16 +177,51 @@ export default function WebIss({ token }: { token: string }) {
                 placeholder="2910800"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-brand-dim mb-1.5">URL do WebService (Produção)</label>
-              <input
-                type="text"
-                value={settings.webserviceUrl}
-                onChange={e => setSettings({...settings, webserviceUrl: e.target.value})}
-                className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2.5 px-4 text-brand-text outline-none focus:border-brand-green transition-colors"
-                placeholder="https://..."
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-brand-dim mb-1.5">Item LC 116 Padrão</label>
+                <input
+                  type="text"
+                  value={settings.itemLc116}
+                  onChange={e => setSettings({...settings, itemLc116: e.target.value})}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2.5 px-4 text-brand-text outline-none focus:border-brand-green transition-colors"
+                  placeholder="17.19"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-brand-dim mb-1.5">Alíquota Padrão (%)</label>
+                <input
+                  type="number"
+                  value={settings.aliquota}
+                  onChange={e => setSettings({...settings, aliquota: e.target.value})}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2.5 px-4 text-brand-text outline-none focus:border-brand-green transition-colors"
+                  placeholder="3.00"
+                />
+              </div>
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-brand-dim mb-1.5">Cód. Tributação Município</label>
+                <input
+                  type="text"
+                  value={settings.codigoTributacaoMunicipio}
+                  onChange={e => setSettings({...settings, codigoTributacaoMunicipio: e.target.value})}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2.5 px-4 text-brand-text outline-none focus:border-brand-green transition-colors"
+                  placeholder="123456"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-brand-dim mb-1.5">CNAE</label>
+                <input
+                  type="text"
+                  value={settings.cnae}
+                  onChange={e => setSettings({...settings, cnae: e.target.value})}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2.5 px-4 text-brand-text outline-none focus:border-brand-green transition-colors"
+                  placeholder="0000000"
+                />
+              </div>
+            </div>
+
             <div className="pt-4 border-t border-brand-border flex gap-3">
               <button
                 onClick={handleSaveSettings}
@@ -188,7 +233,7 @@ export default function WebIss({ token }: { token: string }) {
               </button>
               <button
                 onClick={handleTestConnection}
-                disabled={testingConnection || !settings.webserviceUrl}
+                disabled={testingConnection}
                 className="flex-1 bg-brand-surface2 hover:bg-brand-surface3 border border-brand-border text-brand-text font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
               >
                 {testingConnection ? <Loader2 size={18} className="animate-spin" /> : <Activity size={18} />}
@@ -207,6 +252,19 @@ export default function WebIss({ token }: { token: string }) {
 
         <div className="bg-brand-surface border border-brand-border rounded-xl p-6">
           <h3 className="text-lg font-bold text-brand-text mb-4">Certificado Digital A1</h3>
+          
+          {hasCertificate && (
+            <div className="mb-6 p-4 bg-brand-green/10 border border-brand-green/30 rounded-lg flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-brand-green/20 flex items-center justify-center text-brand-green shrink-0">
+                <FileKey size={20} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-brand-green">Certificado Carregado</p>
+                <p className="text-xs text-brand-green/80 mt-0.5">O certificado digital está pronto para uso nas emissões.</p>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleUpload} className="space-y-6">
             <div className="space-y-4">
               <div>
