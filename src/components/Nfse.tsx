@@ -5,6 +5,7 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
   const [nfses, setNfses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewingXml, setViewingXml] = useState<string | null>(null);
 
   useEffect(() => {
     fetchNfse();
@@ -28,6 +29,22 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
     if (setRefreshKey) {
       setRefreshKey(k => k + 1);
     }
+  };
+
+  const handleDownload = (nfse: any) => {
+    if (!nfse.xml) {
+      alert('XML não disponível para esta nota.');
+      return;
+    }
+    const blob = new Blob([nfse.xml], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${nfse.id}.xml`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-brand-green" /></div>;
@@ -87,8 +104,26 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">
-                      <button className="text-brand-muted hover:text-brand-text transition-colors"><Eye size={16} /></button>
-                      <button className="text-brand-muted hover:text-brand-text transition-colors"><Download size={16} /></button>
+                      <button 
+                        onClick={() => {
+                          if (!n.xml) {
+                            alert('XML não disponível para esta nota.');
+                            return;
+                          }
+                          setViewingXml(n.xml);
+                        }}
+                        className="text-brand-muted hover:text-brand-text transition-colors"
+                        title="Visualizar XML"
+                      >
+                        <Eye size={16} />
+                      </button>
+                      <button 
+                        onClick={() => handleDownload(n)}
+                        className="text-brand-muted hover:text-brand-text transition-colors"
+                        title="Baixar XML"
+                      >
+                        <Download size={16} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -98,6 +133,32 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
         </table>
       </div>
       {isModalOpen && <NewNfseModal onClose={() => setIsModalOpen(false)} onSuccess={handleSuccess} token={token} />}
+      
+      {viewingXml && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-brand-surface border border-brand-border rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl">
+            <div className="flex justify-between items-center p-4 border-b border-brand-border">
+              <h3 className="text-lg font-bold text-brand-text">Visualizar XML</h3>
+              <button onClick={() => setViewingXml(null)} className="text-brand-muted hover:text-brand-text">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-4 overflow-auto flex-1">
+              <pre className="text-xs text-brand-muted font-mono whitespace-pre-wrap break-all bg-brand-surface2 p-4 rounded-lg border border-brand-border">
+                {viewingXml}
+              </pre>
+            </div>
+            <div className="p-4 border-t border-brand-border flex justify-end">
+              <button 
+                onClick={() => setViewingXml(null)}
+                className="px-4 py-2 bg-brand-surface2 hover:bg-brand-border text-brand-text rounded-lg transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

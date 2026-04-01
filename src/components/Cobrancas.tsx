@@ -78,9 +78,41 @@ export default function Cobrancas({ token, refreshKey }: { token: string, refres
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">
-                      <button className="text-brand-muted hover:text-brand-text transition-colors"><Eye size={16} /></button>
-                      <button className="text-brand-muted hover:text-brand-text transition-colors"><Receipt size={16} /></button>
-                      <button className="text-brand-muted hover:text-brand-text transition-colors"><Mail size={16} /></button>
+                      <button 
+                        onClick={() => alert('Visualizar cobrança não implementado.')}
+                        className="text-brand-muted hover:text-brand-text transition-colors"
+                        title="Visualizar Cobrança"
+                      >
+                        <Eye size={16} />
+                      </button>
+                      <button 
+                        onClick={() => {
+                          if (c.nfse && c.nfse.xml) {
+                            const blob = new Blob([c.nfse.xml], { type: 'application/xml' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `NFS-${c.id}.xml`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                          } else {
+                            alert('NFS-e não disponível para esta cobrança.');
+                          }
+                        }}
+                        className="text-brand-muted hover:text-brand-text transition-colors"
+                        title="Baixar NFS-e"
+                      >
+                        <Receipt size={16} />
+                      </button>
+                      <button 
+                        onClick={() => alert('Enviar por e-mail não implementado.')}
+                        className="text-brand-muted hover:text-brand-text transition-colors"
+                        title="Enviar por E-mail"
+                      >
+                        <Mail size={16} />
+                      </button>
                     </div>
                   </td>
                 </tr>
