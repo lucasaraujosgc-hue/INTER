@@ -533,13 +533,15 @@ function NewChargeModal({ onClose, onSuccess, token }: { onClose: () => void, on
 
   const [formData, setFormData] = useState({
     cliente: '',
-    valor: 3200,
+    valor: 300,
     vencimento: new Date(Date.now() + 30*86400000).toISOString().split('T')[0],
-    descricao: 'Honorários contábeis referente à competência Janeiro/2025',
+    descricao: 'Prestação de serviços contábeis, compreendendo escrituração contábil e fiscal, apuração de tributos, elaboração e entrega de obrigações acessórias, assessoria e consultoria contábil, referente ao período de xx/202x.',
     itemLc116: '',
     aliquota: 0,
     codigoTributacaoMunicipio: '',
-    cnae: ''
+    cnae: '',
+    competencia: new Date().toISOString().split('T')[0],
+    issRetido: 2
   });
 
   useEffect(() => {
@@ -725,6 +727,26 @@ function NewChargeModal({ onClose, onSuccess, token }: { onClose: () => void, on
                   placeholder="Ex: 6920601"
                   className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full" 
                 />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Competência</label>
+                <input 
+                  type="date" 
+                  value={formData.competencia}
+                  onChange={e => setFormData({...formData, competencia: e.target.value})}
+                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full [color-scheme:dark]" 
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">ISS Retido</label>
+                <select 
+                  value={formData.issRetido}
+                  onChange={e => setFormData({...formData, issRetido: Number(e.target.value)})}
+                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full"
+                >
+                  <option value={1}>Sim (1)</option>
+                  <option value={2}>Não (2)</option>
+                </select>
               </div>
             </div>
           </div>

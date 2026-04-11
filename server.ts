@@ -86,7 +86,7 @@ function generateRpsXml(data: any, settings: any) {
 						<DataEmissao>${new Date().toISOString().split('.')[0]}</DataEmissao>
 						<Status>1</Status>
 					</Rps>
-					<Competencia>${new Date().toISOString().split('T')[0]}</Competencia>
+					<Competencia>${data.competencia || new Date().toISOString().split('T')[0]}</Competencia>
 					<Servico>
 						<Valores>
 							<ValorServicos>${data.valor.toFixed(2)}</ValorServicos>
@@ -102,8 +102,7 @@ function generateRpsXml(data: any, settings: any) {
 							<DescontoIncondicionado>0.00</DescontoIncondicionado>
 							<DescontoCondicionado>0.00</DescontoCondicionado>
 						</Valores>
-						<IssRetido>2</IssRetido>
-						<ResponsavelRetencao></ResponsavelRetencao>
+						<IssRetido>${data.issRetido || 2}</IssRetido>
 						<ItemListaServico>${data.itemLc116 || settings.itemLc116 || '17.19'}</ItemListaServico>
 						<CodigoCnae>${data.cnae || settings.cnae || ''}</CodigoCnae>
 						<CodigoTributacaoMunicipio>${data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio || ''}</CodigoTributacaoMunicipio>
@@ -112,7 +111,6 @@ function generateRpsXml(data: any, settings: any) {
 						<CodigoPais>1058</CodigoPais>
 						<ExigibilidadeISS>1</ExigibilidadeISS>
 						<MunicipioIncidencia>${settings.codigoMunicipio || '2910800'}</MunicipioIncidencia>
-						<NumeroProcesso></NumeroProcesso>
 					</Servico>
 					<Prestador>
 						<CpfCnpj>
@@ -125,29 +123,23 @@ function generateRpsXml(data: any, settings: any) {
 							<CpfCnpj>
 								${cpfCnpjTag}
 							</CpfCnpj>
-							<InscricaoMunicipal></InscricaoMunicipal>
 						</IdentificacaoTomador>
 						<RazaoSocial>${data.cliente}</RazaoSocial>
 						<Endereco>
-							<Endereco></Endereco>
-							<Numero></Numero>
-							<Complemento></Complemento>
-							<Bairro></Bairro>
-							<CodigoMunicipio></CodigoMunicipio>
-							<Uf></Uf>
-							<CodigoPais></CodigoPais>
-							<Cep></Cep>
+							<Endereco>${data.clienteEndereco || ''}</Endereco>
+							<Numero>${data.clienteNumero || ''}</Numero>
+							${data.clienteComplemento ? `<Complemento>${data.clienteComplemento}</Complemento>` : ''}
+							<Bairro>${data.clienteBairro || ''}</Bairro>
+							<CodigoMunicipio>${data.clienteCodigoMunicipio || '2929305'}</CodigoMunicipio>
+							<Uf>${data.clienteUf || 'BA'}</Uf>
+							<CodigoPais>1058</CodigoPais>
+							<Cep>${data.clienteCep || ''}</Cep>
 						</Endereco>
 						<Contato>
-							<Telefone></Telefone>
-							<Email></Email>
+							<Telefone>${data.clienteTelefone || ''}</Telefone>
+							<Email>${data.clienteEmail || ''}</Email>
 						</Contato>
 					</Tomador>
-					<ConstrucaoCivil>
-						<CodigoObra></CodigoObra>
-						<Art></Art>
-					</ConstrucaoCivil>
-					<RegimeEspecialTributacao></RegimeEspecialTributacao>
 					<OptanteSimplesNacional>1</OptanteSimplesNacional>
 					<IncentivoFiscal>2</IncentivoFiscal>
 				</InfDeclaracaoPrestacaoServico>
@@ -535,6 +527,21 @@ app.post('/api/nfse/emitir', authenticate, async (req, res) => {
   try {
     const data = req.body;
     const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    
+    // Enrich data with client info
+    const clients = JSON.parse(fs.readFileSync(clientsFile, 'utf-8'));
+    const clientInfo = clients.find((c: any) => c.name === data.cliente);
+    if (clientInfo) {
+      data.clienteCpfCnpj = clientInfo.cpfCnpj || clientInfo.document;
+      data.clienteEndereco = clientInfo.logradouro || clientInfo.address;
+      data.clienteNumero = clientInfo.numero || clientInfo.number;
+      data.clienteBairro = clientInfo.bairro || clientInfo.neighborhood;
+      data.clienteCodigoMunicipio = clientInfo.cityCode || '2929305'; // Default to example if not provided
+      data.clienteUf = clientInfo.municipioUf ? clientInfo.municipioUf.split('/')[1] : (clientInfo.state || 'BA');
+      data.clienteCep = clientInfo.cep ? clientInfo.cep.replace(/\D/g, '') : (clientInfo.zipCode ? clientInfo.zipCode.replace(/\D/g, '') : '');
+      data.clienteTelefone = clientInfo.telefone ? clientInfo.telefone.replace(/\D/g, '') : (clientInfo.phone ? clientInfo.phone.replace(/\D/g, '') : '');
+      data.clienteEmail = clientInfo.email || '';
+    }
     
     // 1. Gerar o XML do RPS
     const xmlRps = generateRpsXml(data, settings);

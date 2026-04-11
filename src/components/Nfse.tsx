@@ -171,12 +171,14 @@ function NewNfseModal({ onClose, onSuccess, token }: { onClose: () => void, onSu
 
   const [formData, setFormData] = useState({
     cliente: '',
-    valor: 1500,
-    descricao: 'Serviços prestados',
+    valor: 300,
+    descricao: 'Prestação de serviços contábeis, compreendendo escrituração contábil e fiscal, apuração de tributos, elaboração e entrega de obrigações acessórias, assessoria e consultoria contábil, referente ao período de xx/202x.',
     itemLc116: '',
     aliquota: 0,
     codigoTributacaoMunicipio: '',
-    cnae: ''
+    cnae: '',
+    competencia: new Date().toISOString().split('T')[0],
+    issRetido: 2
   });
 
   useEffect(() => {
@@ -337,6 +339,29 @@ function NewNfseModal({ onClose, onSuccess, token }: { onClose: () => void, onSu
                   onChange={e => setFormData({...formData, cnae: e.target.value})}
                   className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
                 />
+              </div>
+              <div>
+                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Competência</label>
+                <input 
+                  type="date" 
+                  value={formData.competencia}
+                  onChange={e => setFormData({...formData, competencia: e.target.value})}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">ISS Retido</label>
+                <select 
+                  value={formData.issRetido}
+                  onChange={e => setFormData({...formData, issRetido: Number(e.target.value)})}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                >
+                  <option value={1}>Sim (1)</option>
+                  <option value={2}>Não (2)</option>
+                </select>
               </div>
             </div>
 
