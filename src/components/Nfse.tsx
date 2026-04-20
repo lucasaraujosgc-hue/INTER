@@ -22,6 +22,26 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
       .catch(console.error);
   }, [token, refreshKey]);
 
+  const handleViewPdf = async (nfseId: string) => {
+    try {
+      const res = await fetch(`/api/nfse/${nfseId}/pdf`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        throw new Error('Erro ao buscar o PDF. A NFS-e pode ainda não estar pronta.');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      // To force download you could set a.download, but here we just open in new tab for viewing
+      a.click();
+    } catch (error: any) {
+      alert(error.message || 'Erro ao comunicar com o servidor');
+    }
+  };
+
   const fetchNfse = () => {
     fetch('/api/nfse', { headers: { 'Authorization': `Bearer ${token}` } })
       .then(res => res.json())
@@ -176,15 +196,13 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
                     <td className="px-6 py-4 text-right">
                       <div className="flex gap-2 justify-end">
                         {n.numero && n.codigoVerificacao && (
-                          <a 
-                            href={`https://saogoncalodoscamposba.webiss.com.br/externo/nfse/visualizar/${(sysSettings?.prestadorCnpj || '52613515000160').replace(/\D/g, '')}/${n.codigoVerificacao}/${n.numero}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button 
+                            onClick={() => handleViewPdf(n.id)}
                             className="flex items-center justify-center p-1.5 text-brand-dim hover:text-brand-green bg-brand-surface border border-brand-border rounded hover:bg-brand-surface2/50 transition-colors"
-                            title="Nota Oficial e PDF (WebISS)"
+                            title="Nota Oficial (PDF baixado pelo sistema)"
                           >
                             <span className="text-[10px] font-bold tracking-tight uppercase mr-1">PDF</span>
-                          </a>
+                          </button>
                         )}
                         <button 
                           onClick={() => {
