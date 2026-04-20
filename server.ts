@@ -126,7 +126,7 @@ function generateRpsXml(data: any, settings: any) {
 					<Rps>
 						<IdentificacaoRps>
 							<Numero>${Math.floor(Math.random() * 10000)}</Numero>
-							<Serie>UNICA</Serie>
+							<Serie>1</Serie>
 							<Tipo>1</Tipo>
 						</IdentificacaoRps>
 						<DataEmissao>${new Date().toISOString().split('.')[0]}</DataEmissao>
@@ -149,12 +149,11 @@ function generateRpsXml(data: any, settings: any) {
 							<DescontoCondicionado>0.00</DescontoCondicionado>
 						</Valores>
 						<IssRetido>${data.issRetido || 2}</IssRetido>
-						<ItemListaServico>${data.itemLc116 || settings.itemLc116 || '17.19'}</ItemListaServico>
-						<CodigoCnae>${data.cnae || settings.cnae || ''}</CodigoCnae>
-						<CodigoTributacaoMunicipio>${data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio || ''}</CodigoTributacaoMunicipio>
+						<ItemListaServico>${(data.itemLc116 || settings.itemLc116 || '1719').replace('.', '')}</ItemListaServico>
+						${data.cnae || settings.cnae ? `<CodigoCnae>${data.cnae || settings.cnae}</CodigoCnae>` : ''}
+						${data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio ? `<CodigoTributacaoMunicipio>${data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio}</CodigoTributacaoMunicipio>` : ''}
 						<Discriminacao>${data.descricao}</Discriminacao>
 						<CodigoMunicipio>${settings.codigoMunicipio || '2929305'}</CodigoMunicipio>
-						<CodigoPais>1058</CodigoPais>
 						<ExigibilidadeISS>1</ExigibilidadeISS>
 						<MunicipioIncidencia>${settings.codigoMunicipio || '2929305'}</MunicipioIncidencia>
 					</Servico>
@@ -170,20 +169,20 @@ function generateRpsXml(data: any, settings: any) {
 								${cpfCnpjTag}
 							</CpfCnpj>
 						</IdentificacaoTomador>
-						<RazaoSocial>${data.cliente}</RazaoSocial>
+						${data.cliente ? `<RazaoSocial>${data.cliente}</RazaoSocial>` : ''}
 						<Endereco>
-							<Endereco>${data.clienteEndereco || ''}</Endereco>
-							<Numero>${data.clienteNumero || '114'}</Numero>
+							${data.clienteEndereco ? `<Endereco>${data.clienteEndereco}</Endereco>` : ''}
+							${data.clienteNumero ? `<Numero>${data.clienteNumero}</Numero>` : ''}
 							${data.clienteComplemento ? `<Complemento>${data.clienteComplemento}</Complemento>` : ''}
-							<Bairro>${data.clienteBairro || ''}</Bairro>
-							<CodigoMunicipio>${data.clienteCodigoMunicipio || '2929305'}</CodigoMunicipio>
-							<Uf>${data.clienteUf || 'BA'}</Uf>
+							${data.clienteBairro ? `<Bairro>${data.clienteBairro}</Bairro>` : ''}
+							${data.clienteCodigoMunicipio ? `<CodigoMunicipio>${data.clienteCodigoMunicipio}</CodigoMunicipio>` : '<CodigoMunicipio>2929305</CodigoMunicipio>'}
+							${data.clienteUf ? `<Uf>${data.clienteUf}</Uf>` : '<Uf>BA</Uf>'}
 							<CodigoPais>1058</CodigoPais>
-							<Cep>${data.clienteCep || ''}</Cep>
+							${data.clienteCep ? `<Cep>${data.clienteCep}</Cep>` : ''}
 						</Endereco>
 						<Contato>
-							<Telefone>${data.clienteTelefone ? data.clienteTelefone.replace(/\D/g, '') : ''}</Telefone>
-							<Email>${data.clienteEmail || ''}</Email>
+							${data.clienteTelefone ? `<Telefone>${data.clienteTelefone.replace(/\D/g, '')}</Telefone>` : ''}
+							${data.clienteEmail ? `<Email>${data.clienteEmail}</Email>` : ''}
 						</Contato>
 					</Tomador>
 					<OptanteSimplesNacional>1</OptanteSimplesNacional>
@@ -205,23 +204,19 @@ function signXml(xml: string, keyPem: string, certPem: string): string {
 
 async function sendSoapRequest(url: string, action: string, xmlBody: string, certPem: string, keyPem: string) {
   const soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
-    <RecepcionarLoteRpsSincrono xmlns="http://www.abrasf.org.br/nfse.xsd">
-      <cabecalho>
-        <![CDATA[<cabecalho versao="2.02" xmlns="http://www.abrasf.org.br/nfse.xsd"><versaoDados>2.02</versaoDados></cabecalho>]]>
-      </cabecalho>
-      <msg>
-        <![CDATA[${xmlBody}]]>
-      </msg>
-    </RecepcionarLoteRpsSincrono>
+    <RecepcionarLoteRpsSincronoRequest xmlns="http://nfse.abrasf.org.br">
+      <nfseCabecMsg><![CDATA[<cabecalho xmlns="http://www.abrasf.org.br/nfse.xsd" versao="2.02"><versaoDados>2.02</versaoDados></cabecalho>]]></nfseCabecMsg>
+      <nfseDadosMsg><![CDATA[${xmlBody}]]></nfseDadosMsg>
+    </RecepcionarLoteRpsSincronoRequest>
   </soap:Body>
 </soap:Envelope>`;
 
   const httpsAgent = new https.Agent({
     cert: certPem,
     key: keyPem,
-    rejectUnauthorized: false,
+    rejectUnauthorized: false, // Pode ser necessário manter false se a prefeitura não tiver cadeia confiável
     minVersion: 'TLSv1.2'
   });
 
@@ -498,7 +493,7 @@ app.post('/api/cobrancas', authenticate, async (req, res) => {
       try {
         const soapResponse = await sendSoapRequest(
           WEBSERVICE_URL,
-          'http://www.abrasf.org.br/nfse.xsd/RecepcionarLoteRpsSincrono',
+          'http://nfse.abrasf.org.br/RecepcionarLoteRpsSincrono',
           signedXml,
           certPem,
           keyPem
@@ -633,7 +628,7 @@ app.post('/api/nfse/emitir', authenticate, async (req, res) => {
     try {
       soapResponse = await sendSoapRequest(
         webserviceUrl,
-        'http://www.abrasf.org.br/nfse.xsd/RecepcionarLoteRpsSincrono',
+        'http://nfse.abrasf.org.br/RecepcionarLoteRpsSincrono',
         signedXml,
         certPem,
         keyPem
