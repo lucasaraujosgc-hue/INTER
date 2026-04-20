@@ -216,8 +216,8 @@ export default function Clientes({ token }: { token: string }) {
               <input
                 type="text"
                 value={newClient.municipioUf}
-                readOnly
-                className="w-full bg-brand-surface2/50 border border-brand-border rounded-lg px-4 py-2.5 text-brand-muted outline-none cursor-not-allowed"
+                onChange={e => setNewClient({ ...newClient, municipioUf: e.target.value })}
+                className="w-full bg-brand-surface2 border border-brand-border rounded-lg px-4 py-2.5 text-brand-text outline-none focus:border-brand-green transition-colors"
               />
             </div>
             <div>
@@ -225,8 +225,8 @@ export default function Clientes({ token }: { token: string }) {
               <input
                 type="text"
                 value={newClient.logradouro}
-                readOnly
-                className="w-full bg-brand-surface2/50 border border-brand-border rounded-lg px-4 py-2.5 text-brand-muted outline-none cursor-not-allowed"
+                onChange={e => setNewClient({ ...newClient, logradouro: e.target.value })}
+                className="w-full bg-brand-surface2 border border-brand-border rounded-lg px-4 py-2.5 text-brand-text outline-none focus:border-brand-green transition-colors"
               />
             </div>
           </div>
@@ -237,8 +237,8 @@ export default function Clientes({ token }: { token: string }) {
               <input
                 type="text"
                 value={newClient.bairro}
-                readOnly
-                className="w-full bg-brand-surface2/50 border border-brand-border rounded-lg px-4 py-2.5 text-brand-muted outline-none cursor-not-allowed"
+                onChange={e => setNewClient({ ...newClient, bairro: e.target.value })}
+                className="w-full bg-brand-surface2 border border-brand-border rounded-lg px-4 py-2.5 text-brand-text outline-none focus:border-brand-green transition-colors"
               />
             </div>
             <div>
