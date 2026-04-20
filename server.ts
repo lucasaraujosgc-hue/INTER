@@ -17,6 +17,8 @@ const app = express();
 const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'virgula-contabil-secret-key-2025';
 
+const WEBSERVICE_URL = 'https://saogoncalodoscamposba.webiss.com.br/ws/nfse.asmx';
+
 app.use(cors());
 
 // Ensure backup directory exists
@@ -56,12 +58,56 @@ const upload = multer({ dest: path.join(process.cwd(), 'tmp') });
 app.use(express.json());
 
 // --- ABRASF v2.04 XML Generation & Signing ---
+class CustomKeyInfo {
+  private certPem: string;
+  constructor(certPem: string) {
+    this.certPem = certPem;
+  }
+  getKeyInfo() {
+    const cleanCert = this.certPem
+      .replace(/-----BEGIN CERTIFICATE-----/g, '')
+      .replace(/-----END CERTIFICATE-----/g, '')
+      .replace(/\r/g, '')
+      .replace(/\n/g, '');
+    return `<X509Data><X509Certificate>${cleanCert}</X509Certificate></X509Data>`;
+  }
+  getKey() {
+    return Buffer.from(this.certPem);
+  }
+}
+
+function signNode(xml: string, xpath: string, keyPem: string, certPem: string): string {
+  const sig = new SignedXml({
+    privateKey: keyPem,
+    publicCert: certPem,
+    canonicalizationAlgorithm: "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
+    signatureAlgorithm: "http://www.w3.org/2000/09/xmldsig#rsa-sha1"
+  });
+  
+  sig.addReference({
+    xpath: xpath,
+    transforms: [
+      "http://www.w3.org/2000/09/xmldsig#enveloped-signature",
+      "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
+    ],
+    digestAlgorithm: "http://www.w3.org/2000/09/xmldsig#sha1"
+  });
+  
+  sig.keyInfoProvider = new CustomKeyInfo(certPem);
+  
+  sig.computeSignature(xml, {
+    location: { reference: xpath, action: "append" }
+  });
+  
+  return sig.getSignedXml();
+}
+
 function generateRpsXml(data: any, settings: any) {
   // Geração do XML do Lote RPS seguindo o padrão ABRASF v2.02 Adaptações do Padrão Nacional
   const idRps = `RPS_${Date.now()}`;
   const idLote = `LOTE_${Date.now()}`;
   
-  const tomadorCpfCnpj = data.clienteCpfCnpj ? data.clienteCpfCnpj.replace(/\D/g, '') : '99999999000199';
+  const tomadorCpfCnpj = data.clienteCpfCnpj ? data.clienteCpfCnpj.replace(/\D/g, '') : '08570758000177';
   const isCpf = tomadorCpfCnpj.length === 11;
   const cpfCnpjTag = isCpf ? `<Cpf>${tomadorCpfCnpj}</Cpf>` : `<Cnpj>${tomadorCpfCnpj}</Cnpj>`;
 
@@ -107,10 +153,10 @@ function generateRpsXml(data: any, settings: any) {
 						<CodigoCnae>${data.cnae || settings.cnae || ''}</CodigoCnae>
 						<CodigoTributacaoMunicipio>${data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio || ''}</CodigoTributacaoMunicipio>
 						<Discriminacao>${data.descricao}</Discriminacao>
-						<CodigoMunicipio>${settings.codigoMunicipio || '2910800'}</CodigoMunicipio>
+						<CodigoMunicipio>${settings.codigoMunicipio || '2929305'}</CodigoMunicipio>
 						<CodigoPais>1058</CodigoPais>
 						<ExigibilidadeISS>1</ExigibilidadeISS>
-						<MunicipioIncidencia>${settings.codigoMunicipio || '2910800'}</MunicipioIncidencia>
+						<MunicipioIncidencia>${settings.codigoMunicipio || '2929305'}</MunicipioIncidencia>
 					</Servico>
 					<Prestador>
 						<CpfCnpj>
@@ -127,7 +173,7 @@ function generateRpsXml(data: any, settings: any) {
 						<RazaoSocial>${data.cliente}</RazaoSocial>
 						<Endereco>
 							<Endereco>${data.clienteEndereco || ''}</Endereco>
-							<Numero>${data.clienteNumero || ''}</Numero>
+							<Numero>${data.clienteNumero || '114'}</Numero>
 							${data.clienteComplemento ? `<Complemento>${data.clienteComplemento}</Complemento>` : ''}
 							<Bairro>${data.clienteBairro || ''}</Bairro>
 							<CodigoMunicipio>${data.clienteCodigoMunicipio || '2929305'}</CodigoMunicipio>
@@ -136,7 +182,7 @@ function generateRpsXml(data: any, settings: any) {
 							<Cep>${data.clienteCep || ''}</Cep>
 						</Endereco>
 						<Contato>
-							<Telefone>${data.clienteTelefone || ''}</Telefone>
+							<Telefone>${data.clienteTelefone ? data.clienteTelefone.replace(/\D/g, '') : ''}</Telefone>
 							<Email>${data.clienteEmail || ''}</Email>
 						</Contato>
 					</Tomador>
@@ -150,51 +196,11 @@ function generateRpsXml(data: any, settings: any) {
 }
 
 function signXml(xml: string, keyPem: string, certPem: string): string {
-  // Assinatura 1: InfDeclaracaoPrestacaoServico
-  const sig1 = new SignedXml({
-    privateKey: keyPem,
-    publicCert: certPem,
-    canonicalizationAlgorithm: "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
-    signatureAlgorithm: "http://www.w3.org/2000/09/xmldsig#rsa-sha1"
-  });
-  
-  sig1.addReference({
-    xpath: "//*[local-name(.)='InfDeclaracaoPrestacaoServico']",
-    transforms: [
-      "http://www.w3.org/2000/09/xmldsig#enveloped-signature",
-      "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
-    ],
-    digestAlgorithm: "http://www.w3.org/2000/09/xmldsig#sha1"
-  });
-  
-  sig1.computeSignature(xml, {
-    location: { reference: "//*[local-name(.)='InfDeclaracaoPrestacaoServico']", action: "after" }
-  });
-  
-  const signedXml1 = sig1.getSignedXml();
-
-  // Assinatura 2: LoteRps
-  const sig2 = new SignedXml({
-    privateKey: keyPem,
-    publicCert: certPem,
-    canonicalizationAlgorithm: "http://www.w3.org/TR/2001/REC-xml-c14n-20010315",
-    signatureAlgorithm: "http://www.w3.org/2000/09/xmldsig#rsa-sha1"
-  });
-  
-  sig2.addReference({
-    xpath: "//*[local-name(.)='LoteRps']",
-    transforms: [
-      "http://www.w3.org/2000/09/xmldsig#enveloped-signature",
-      "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
-    ],
-    digestAlgorithm: "http://www.w3.org/2000/09/xmldsig#sha1"
-  });
-  
-  sig2.computeSignature(signedXml1, {
-    location: { reference: "//*[local-name(.)='LoteRps']", action: "after" }
-  });
-
-  return sig2.getSignedXml();
+  // Sign InfDeclaracaoPrestacaoServico first
+  let signedXml = signNode(xml, "//*[local-name(.)='InfDeclaracaoPrestacaoServico']", keyPem, certPem);
+  // Then sign LoteRps
+  signedXml = signNode(signedXml, "//*[local-name(.)='LoteRps']", keyPem, certPem);
+  return signedXml;
 }
 
 async function sendSoapRequest(url: string, action: string, xmlBody: string, certPem: string, keyPem: string) {
@@ -451,6 +457,22 @@ app.post('/api/cobrancas', authenticate, async (req, res) => {
     // 2. Emitir NFS-e
     if (toggles?.nfse) {
       const settings = fs.existsSync(settingsFile) ? JSON.parse(fs.readFileSync(settingsFile, 'utf-8')) : {};
+      
+      // Fetch full client details for XML
+      const clients = JSON.parse(fs.readFileSync(clientsFile, 'utf-8'));
+      const clientInfo = clients.find((c: any) => c.name === data.cliente);
+      if (clientInfo) {
+        data.clienteCpfCnpj = clientInfo.cpfCnpj || clientInfo.document;
+        data.clienteEndereco = clientInfo.logradouro || clientInfo.address;
+        data.clienteNumero = clientInfo.numero || clientInfo.number;
+        data.clienteBairro = clientInfo.bairro || clientInfo.neighborhood;
+        data.clienteCodigoMunicipio = clientInfo.cityCode || '2929305';
+        data.clienteUf = clientInfo.municipioUf ? clientInfo.municipioUf.split('/')[1] : (clientInfo.state || 'BA');
+        data.clienteCep = clientInfo.cep ? clientInfo.cep.replace(/\D/g, '') : (clientInfo.zipCode ? clientInfo.zipCode.replace(/\D/g, '') : '');
+        data.clienteTelefone = clientInfo.telefone ? clientInfo.telefone.replace(/\D/g, '') : (clientInfo.phone ? clientInfo.phone.replace(/\D/g, '') : '');
+        data.clienteEmail = clientInfo.email || '';
+      }
+
       const xmlRps = generateRpsXml(data, settings);
       let certPem = process.env.CERT_PEM;
       let keyPem = process.env.KEY_PEM;
@@ -465,27 +487,64 @@ app.post('/api/cobrancas', authenticate, async (req, res) => {
 
       if (!certPem || !keyPem) {
         return res.status(400).json({
-          error: 'Certificado Digital A1 não configurado. Faça o upload do arquivo .pfx nas configurações.',
+          error: 'Certificado Digital A1 não configurado. Faça o upload do arquivo .pfx nas configurações para emitir NFS-e.',
           xmlPreview: xmlRps
         });
       }
 
       const signedXml = signXml(xmlRps, keyPem, certPem);
       
+      let numeroNfse = null;
+      try {
+        const soapResponse = await sendSoapRequest(
+          WEBSERVICE_URL,
+          'http://www.abrasf.org.br/nfse.xsd/RecepcionarLoteRpsSincrono',
+          signedXml,
+          certPem,
+          keyPem
+        );
+        console.log('SOAP Response in Cobrança:', soapResponse);
+
+        const doc = new DOMParser().parseFromString(soapResponse, 'text/xml');
+        const mensagens = doc.getElementsByTagName('MensagemRetorno');
+        if (mensagens.length > 0) {
+          let errorMessages = [];
+          for (let i = 0; i < mensagens.length; i++) {
+            const msg = mensagens[i];
+            const codigo = msg.getElementsByTagName('Codigo')[0]?.textContent || '';
+            const texto = msg.getElementsByTagName('Mensagem')[0]?.textContent || '';
+            errorMessages.push(`[${codigo}] ${texto}`);
+          }
+          if (errorMessages.length > 0) {
+            return res.status(400).json({
+              error: 'Erro retornado pela Prefeitura na emissão da NFS-e: ' + errorMessages.join(' | '),
+              xmlPreview: signedXml
+            });
+          }
+        }
+
+        const numeroNfseNode = doc.getElementsByTagName('Numero')[0];
+        if (numeroNfseNode) numeroNfse = numeroNfseNode.textContent;
+      } catch (soapError: any) {
+        console.error('Erro ao enviar SOAP:', soapError.message);
+        return res.status(500).json({ error: 'Erro ao emitir NFS-e no WebService: ' + soapError.message, xmlPreview: signedXml });
+      }
+
       const nfseList = JSON.parse(fs.readFileSync(nfseFile, 'utf-8'));
       nfseData = {
-        id: `NFS-${Date.now()}`,
+        id: numeroNfse ? `NFS-${numeroNfse}` : `NFS-${Date.now()}`,
+        numero: numeroNfse,
         client: data.clienteId || data.cliente,
         clientName: data.cliente,
         value: data.valor,
         issueDate: new Date().toISOString().split('T')[0],
-        status: 'issued',
+        status: numeroNfse ? 'issued' : 'pending',
         xml: signedXml
       };
       nfseList.push(nfseData);
       fs.writeFileSync(nfseFile, JSON.stringify(nfseList));
       
-      message += ' NFS-e emitida.';
+      message += ' NFS-e enviada ao WebISS.';
     }
 
     // 3. Salvar Cobrança
@@ -568,10 +627,11 @@ app.post('/api/nfse/emitir', authenticate, async (req, res) => {
     const signedXml = signXml(xmlRps, keyPem, certPem);
 
     // 3. Enviar para o WebISS via SOAP/mTLS
-    const webserviceUrl = 'https://saogoncalodoscamposba.webiss.com.br/ws/nfse.asmx';
+    const webserviceUrl = WEBSERVICE_URL;
+    let soapResponse = '';
     
     try {
-      const soapResponse = await sendSoapRequest(
+      soapResponse = await sendSoapRequest(
         webserviceUrl,
         'http://www.abrasf.org.br/nfse.xsd/RecepcionarLoteRpsSincrono',
         signedXml,
@@ -579,34 +639,55 @@ app.post('/api/nfse/emitir', authenticate, async (req, res) => {
         keyPem
       );
       console.log('SOAP Response:', soapResponse);
-      // Aqui você faria o parse do XML de resposta para verificar erros ou sucesso
-      // e extrair o número da NFS-e gerada.
+      
+      const doc = new DOMParser().parseFromString(soapResponse, 'text/xml');
+      
+      const mensagens = doc.getElementsByTagName('MensagemRetorno');
+      if (mensagens.length > 0) {
+        let errorMessages = [];
+        for (let i = 0; i < mensagens.length; i++) {
+          const msg = mensagens[i];
+          const codigo = msg.getElementsByTagName('Codigo')[0]?.textContent || '';
+          const texto = msg.getElementsByTagName('Mensagem')[0]?.textContent || '';
+          errorMessages.push(`[${codigo}] ${texto}`);
+        }
+        if (errorMessages.length > 0) {
+          return res.status(400).json({
+            error: 'Erro retornado pela Prefeitura: ' + errorMessages.join(' | '),
+            xmlPreview: signedXml
+          });
+        }
+      }
+
+      const numeroNfseNode = doc.getElementsByTagName('Numero')[0];
+      const numeroNfse = numeroNfseNode ? numeroNfseNode.textContent : null;
+
+      // 4. Salvar a nota fiscal no banco de dados local
+      const nfseList = JSON.parse(fs.readFileSync(nfseFile, 'utf-8'));
+      const newNfse = {
+        id: numeroNfse ? `NFS-${numeroNfse}` : `NFS-${Date.now()}`,
+        numero: numeroNfse,
+        client: data.clienteId || data.cliente,
+        clientName: data.cliente,
+        value: data.valor,
+        issueDate: new Date().toISOString().split('T')[0],
+        status: numeroNfse ? 'issued' : 'pending',
+        xml: signedXml
+      };
+      nfseList.push(newNfse);
+      fs.writeFileSync(nfseFile, JSON.stringify(nfseList));
+
+      res.json({
+        success: true,
+        message: 'RPS gerado, assinado e enviado com sucesso.',
+        signedXml,
+        nfse: newNfse
+      });
+
     } catch (soapError: any) {
       console.error('Erro ao enviar SOAP:', soapError.message);
-      // Em um ambiente real, você poderia decidir se falha a emissão ou apenas loga o erro
-      // Para testes, vamos apenas logar e continuar
+      return res.status(500).json({ error: soapError.message, xmlPreview: signedXml });
     }
-
-    // 4. Salvar a nota fiscal no banco de dados local
-    const nfseList = JSON.parse(fs.readFileSync(nfseFile, 'utf-8'));
-    const newNfse = {
-      id: `NFS-${Date.now()}`,
-      client: data.clienteId || data.cliente,
-      clientName: data.cliente,
-      value: data.valor,
-      issueDate: new Date().toISOString().split('T')[0],
-      status: 'issued',
-      xml: signedXml
-    };
-    nfseList.push(newNfse);
-    fs.writeFileSync(nfseFile, JSON.stringify(nfseList));
-
-    res.json({
-      success: true,
-      message: 'RPS gerado, assinado e enviado com sucesso.',
-      signedXml,
-      nfse: newNfse
-    });
   } catch (error: any) {
     console.error('Erro ao emitir NFS-e:', error);
     res.status(500).json({ error: error.message || 'Erro interno ao emitir NFS-e' });
@@ -761,7 +842,7 @@ app.post('/api/inter/webhook', async (req, res) => {
 
 app.post('/api/nfse/test-connection', authenticate, async (req, res) => {
   try {
-    const url = 'https://saogoncalodoscamposba.webiss.com.br/ws/nfse.asmx';
+    const url = WEBSERVICE_URL;
 
     let certPem = process.env.CERT_PEM;
     let keyPem = process.env.KEY_PEM;
