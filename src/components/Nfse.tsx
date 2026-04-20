@@ -7,6 +7,12 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewingXml, setViewingXml] = useState<any | null>(null);
 
+  const [search, setSearch] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
   useEffect(() => {
     fetchNfse();
   }, [token, refreshKey]);
@@ -31,6 +37,24 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!confirm('Deseja realmente excluir esta NFS-e?')) return;
+    try {
+      const res = await fetch(`/api/nfse/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        fetchNfse();
+        if (setRefreshKey) setRefreshKey(k => k + 1);
+      } else {
+        alert('Erro ao excluir NFS-e');
+      }
+    } catch(err) {
+      alert('Erro de conexão ao excluir NFS-e');
+    }
+  };
+
   const handleDownload = (nfse: any) => {
     if (!nfse.xml) {
       alert('XML não disponível para esta nota.');
@@ -49,6 +73,18 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
 
   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-brand-green" /></div>;
 
+  const filteredNfses = nfses.filter(n => {
+    const matchesSearch = n.clientName?.toLowerCase().includes(search.toLowerCase()) || n.id?.toLowerCase().includes(search.toLowerCase());
+    const d = new Date(n.issueDate);
+    let inRange = true;
+    if (startDate) inRange = inRange && d >= new Date(startDate);
+    if (endDate) inRange = inRange && d <= new Date(endDate);
+    return matchesSearch && inRange;
+  });
+
+  const totalPages = Math.ceil(filteredNfses.length / ITEMS_PER_PAGE);
+  const paginatedNfses = filteredNfses.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex justify-between items-center mb-6">
@@ -59,78 +95,140 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
         </button>
       </div>
 
-      <div className="bg-brand-surface border border-brand-border rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-brand-border flex gap-4">
+      <div className="bg-brand-surface border border-brand-border rounded-xl overflow-hidden flex flex-col min-h-[500px]">
+        <div className="p-4 border-b border-brand-border flex gap-4 items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-dim" size={16} />
             <input 
               type="text" 
+              value={search}
+              onChange={e => setSearch(e.target.value)}
               placeholder="Buscar nota fiscal..." 
-              className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 pl-10 pr-4 text-brand-text outline-none focus:border-brand-green transition-colors"
+              className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 pl-10 pr-4 text-brand-text outline-none focus:border-brand-green transition-colors text-[13px]"
             />
           </div>
+          <div className="flex gap-2">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Data Inicial</label>
+              <input 
+                type="date" 
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none focus:border-brand-green transition-colors text-[13px]"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Data Final</label>
+              <input 
+                type="date" 
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none focus:border-brand-green transition-colors text-[13px]"
+              />
+            </div>
+          </div>
         </div>
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr>
-              <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Número</th>
-              <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Cliente</th>
-              <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Valor</th>
-              <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Emissão</th>
-              <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Status</th>
-              <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {nfses.length === 0 ? (
+        <div className="overflow-x-auto flex-1">
+          <table className="w-full text-left border-collapse">
+            <thead>
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-brand-muted">
-                  <Receipt size={48} className="mx-auto mb-4 opacity-20" />
-                  <p>Nenhuma NFS-e encontrada.</p>
-                </td>
+                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Número</th>
+                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Cliente</th>
+                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Valor</th>
+                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Emissão</th>
+                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Status</th>
+                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2 text-right">Ações</th>
               </tr>
-            ) : (
-              nfses.map(n => (
-                <tr key={n.id} className="border-b border-white/5 last:border-0 hover:bg-brand-surface2 transition-colors">
-                  <td className="px-6 py-4 text-brand-muted font-mono text-sm">{n.id}</td>
-                  <td className="px-6 py-4 font-medium text-brand-text">{n.clientName}</td>
-                  <td className="px-6 py-4 font-mono text-sm">R$ {n.value.toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
-                  <td className="px-6 py-4 text-brand-muted text-sm">{n.issueDate.split('-').reverse().join('/')}</td>
-                  <td className="px-6 py-4">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand-green/10 text-brand-green">
-                      <span className="w-1.5 h-1.5 rounded-full bg-brand-green" />
-                      Emitida
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => {
-                          if (!n.xml) {
-                            alert('Erro: sem dados para exibir.');
-                            return;
-                          }
-                          setViewingXml(n);
-                        }}
-                        className="text-brand-muted hover:text-brand-text transition-colors"
-                        title="Visualizar XML"
-                      >
-                        <Eye size={16} />
-                      </button>
-                      <button 
-                        onClick={() => handleDownload(n)}
-                        className="text-brand-muted hover:text-brand-text transition-colors"
-                        title="Baixar XML"
-                      >
-                        <Download size={16} />
-                      </button>
-                    </div>
+            </thead>
+            <tbody>
+              {paginatedNfses.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center text-brand-muted">
+                    <Receipt size={48} className="mx-auto mb-4 opacity-20" />
+                    <p>Nenhuma NFS-e encontrada.</p>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                paginatedNfses.map(n => (
+                  <tr key={n.id} className="border-b border-white/5 last:border-0 hover:bg-brand-surface2 transition-colors">
+                    <td className="px-6 py-4 text-brand-muted font-mono text-sm">{n.numero || n.id}</td>
+                    <td className="px-6 py-4 font-medium text-brand-text">{n.clientName}</td>
+                    <td className="px-6 py-4 font-mono text-sm">R$ {n.value.toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+                    <td className="px-6 py-4 text-brand-muted text-sm">{n.issueDate.split('-').reverse().join('/')}</td>
+                    <td className="px-6 py-4">
+                      {n.status === 'issued' ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand-green/10 text-brand-green">
+                          <span className="w-1.5 h-1.5 rounded-full bg-brand-green" />
+                          Emitida
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-500">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                          Pendente
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex gap-2 justify-end">
+                        <button 
+                          onClick={() => {
+                            if (!n.xml) {
+                              alert('Erro: sem dados para exibir.');
+                              return;
+                            }
+                            setViewingXml(n);
+                          }}
+                          className="text-brand-muted hover:text-brand-text transition-colors p-1"
+                          title="Visualizar XML"
+                        >
+                          <Eye size={16} />
+                        </button>
+                        <button 
+                          onClick={() => handleDownload(n)}
+                          className="text-brand-muted hover:text-brand-text transition-colors p-1"
+                          title="Baixar XML"
+                        >
+                          <Download size={16} />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(n.id)}
+                          className="text-brand-muted hover:text-red-500 transition-colors p-1"
+                          title="Excluir NFS-e"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="p-4 border-t border-brand-border flex items-center justify-between">
+            <div className="text-[12px] text-brand-muted">
+              Mostrando <span className="font-medium text-brand-text">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> ao <span className="font-medium text-brand-text">{Math.min(currentPage * ITEMS_PER_PAGE, filteredNfses.length)}</span> de <span className="font-medium text-brand-text">{filteredNfses.length}</span> resultados
+            </div>
+            <div className="flex gap-1">
+              <button 
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                className="px-3 py-1.5 rounded-md bg-brand-surface2 border border-brand-border text-brand-text text-[12px] disabled:opacity-50 hover:bg-brand-surface3 transition-colors"
+              >
+                Anterior
+              </button>
+              <button 
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                className="px-3 py-1.5 rounded-md bg-brand-surface2 border border-brand-border text-brand-text text-[12px] disabled:opacity-50 hover:bg-brand-surface3 transition-colors"
+              >
+                Próxima
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       {isModalOpen && <NewNfseModal onClose={() => setIsModalOpen(false)} onSuccess={handleSuccess} token={token} />}
       

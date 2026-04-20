@@ -4,6 +4,7 @@ import { FileText, Loader2, Search, Plus, Eye, Receipt, Mail } from 'lucide-reac
 export default function Cobrancas({ token, refreshKey }: { token: string, refreshKey?: number }) {
   const [cobrancas, setCobrancas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sendingEmail, setSendingEmail] = useState('');
 
   useEffect(() => {
     fetch('/api/cobrancas', { headers: { 'Authorization': `Bearer ${token}` } })
@@ -17,6 +18,38 @@ export default function Cobrancas({ token, refreshKey }: { token: string, refres
         setLoading(false);
       });
   }, [token, refreshKey]);
+
+  const handleSendEmail = async (c: any) => {
+    const clientEmail = prompt('Digite o e-mail do cliente (ou deixe em branco para enviar um email de teste para contato@virgulacontabil.com.br):', '');
+    if (clientEmail === null) return; // Cancel
+    setSendingEmail(c.id);
+    try {
+      const emailRes = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          to: clientEmail || 'contato@virgulacontabil.com.br',
+          subject: `Cobrança - ${c.clientName || 'Cliente'} - Vírgula Contábil`,
+          messageBody: `Olá ${c.clientName ? c.clientName.split(' ')[0] : ''},\n\nSegue em anexo a sua cobrança com vencimento para ${c.due.split('-').reverse().join('/')} no valor de R$ ${c.value.toLocaleString('pt-BR', {minimumFractionDigits:2})}.\n\nSe tiver qualquer dúvida, estamos à disposição.`,
+          documents: [
+            { docName: `Boleto Bancário`, category: 'Boleto', dueDate: c.due, competence: c.due.substring(0, 7) }
+          ]
+        })
+      });
+      const data = await emailRes.json();
+      if (emailRes.ok) {
+        alert('E-mail enviado com sucesso!');
+      } else {
+        alert(`Erro ao enviar e-mail: ${data.error}`);
+      }
+    } catch (err) {
+      alert('Erro de conexão ao enviar e-mail');
+    }
+    setSendingEmail('');
+  };
 
   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-brand-green" /></div>;
 
@@ -119,11 +152,12 @@ export default function Cobrancas({ token, refreshKey }: { token: string, refres
                         <Receipt size={16} />
                       </button>
                       <button 
-                        onClick={() => alert('Enviar por e-mail não implementado.')}
-                        className="text-brand-muted hover:text-brand-text transition-colors"
+                        onClick={() => handleSendEmail(c)}
+                        disabled={sendingEmail === c.id}
+                        className={`transition-colors ${sendingEmail === c.id ? 'text-brand-green' : 'text-brand-muted hover:text-brand-text'}`}
                         title="Enviar por E-mail"
                       >
-                        <Mail size={16} />
+                        {sendingEmail === c.id ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
                       </button>
                     </div>
                   </td>

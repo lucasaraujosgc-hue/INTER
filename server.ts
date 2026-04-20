@@ -12,6 +12,7 @@ import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import cors from 'cors';
 import forge from 'node-forge';
+import nodemailer from 'nodemailer';
 
 const app = express();
 const PORT = 3000;
@@ -20,6 +21,20 @@ const JWT_SECRET = process.env.JWT_SECRET || 'virgula-contabil-secret-key-2025';
 const WEBSERVICE_URL = 'https://saogoncalodoscamposba.webiss.com.br/ws/nfse.asmx';
 
 app.use(cors());
+
+// --- HTML Builder Helper ---
+const buildEmailHtml = (messageBody: string, documents: any[], emailSignature: string) => {
+    let docsTable = '';
+    if (documents && documents.length > 0) {
+        const sortedDocs = [...documents].sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+        let rows = '';
+        sortedDocs.forEach(doc => {
+            rows += `<tr style="border-bottom: 1px solid #eee;"><td style="padding: 10px; color: #333;">${doc.docName}</td><td style="padding: 10px; color: #555;">${doc.category}</td><td style="padding: 10px; color: #555;">${doc.dueDate || 'N/A'}</td><td style="padding: 10px; color: #555;">${doc.competence}</td></tr>`;
+        });
+        docsTable = `<h3 style="color: #2c3e50; border-bottom: 2px solid #eff6ff; padding-bottom: 10px; margin-top: 30px; font-size: 16px;">Documentos em Anexo:</h3><table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px;"><thead><tr style="background-color: #f8fafc; color: #64748b;"><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0;">Documento</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0;">Categoria</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0;">Vencimento</th><th style="padding: 10px; text-align: left; border-bottom: 2px solid #e2e8f0;">Competência</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    return `<html><body style="font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; margin: 0; padding: 20px;"><div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);"><div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; border-left: 4px solid #2563eb; margin-bottom: 25px;">${messageBody.replace(/\\n/g, '<br>')}</div>${docsTable}<div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 14px; color: #64748b;">${emailSignature || ''}</div></div></body></html>`;
+};
 
 // Ensure backup directory exists
 const backupDir = path.join(process.cwd(), 'backup');
@@ -638,6 +653,22 @@ app.get('/api/nfse', authenticate, (req, res) => {
   }
 });
 
+app.delete('/api/nfse/:id', authenticate, (req, res) => {
+  try {
+    const { id } = req.params;
+    let nfse = JSON.parse(fs.readFileSync(nfseFile, 'utf-8'));
+    const index = nfse.findIndex((n: any) => n.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: 'NFS-e não encontrada' });
+    }
+    nfse.splice(index, 1);
+    fs.writeFileSync(nfseFile, JSON.stringify(nfse));
+    res.json({ success: true, message: 'NFS-e excluída com sucesso!' });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao excluir NFS-e' });
+  }
+});
+
 app.post('/api/nfse/emitir', authenticate, async (req, res) => {
   try {
     const data = req.body;
@@ -914,6 +945,79 @@ app.post('/api/inter/webhook', async (req, res) => {
 });
 
 
+
+app.post('/api/send-email', authenticate, async (req, res) => {
+  try {
+    const { to, subject, messageBody, documents, cc, bcc } = req.body;
+    
+    if (!process.env.MAIL_USERNAME || !process.env.MAIL_PASSWORD) {
+      return res.status(400).json({ error: 'Configurações de SMTP (MAIL_USERNAME, MAIL_PASSWORD) não definidas no .env' });
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.MAIL_SERVER || 'smtp.hostinger.com',
+      port: Number(process.env.MAIL_PORT) || 587,
+      secure: process.env.MAIL_USE_TLS === 'True' || process.env.MAIL_PORT === '465', 
+      auth: {
+        user: process.env.MAIL_USERNAME,
+        pass: process.env.MAIL_PASSWORD
+      }
+    });
+
+    const emailSignature = `<p>Atenciosamente,</p>
+
+<table style="margin-top: 20px; border-top: 1px solid #eee;" cellpadding="0" cellspacing="0">
+  <tr>
+    <td style="vertical-align: middle; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.4; padding-right: 15px;">
+      <strong style="color: #38b38d; font-size: 16px;">Lucas Araujo</strong><br>
+      <span style="color: #555;">Contador | CRC-BA 046968/O</span><br>
+      <span style="color: #555;">contato@virgulacontabil.com.br</span><br>
+      <strong style="color: #38b38d;">(75) 98120-0125</strong>
+    </td>
+    <td style="vertical-align: middle;">
+      <a href="https://www.virgulacontabil.com.br">
+        <img src="https://www.virgulacontabil.com.br/wp-content/uploads/2026/03/Sem-titulo-1.png"
+             width="220"
+             style="display: block;"
+             alt="Logo Virgula Contábil">
+      </a>
+    </td>
+  </tr>
+</table>`;
+
+    const htmlContent = buildEmailHtml(messageBody, documents || [], emailSignature);
+
+    // Adiciona attachments se existirem XMLs/PDFs reais na cobrancaa
+    const attachments: any[] = [];
+    if (documents && documents.length > 0) {
+      documents.forEach((doc: any) => {
+        if (doc.contentStr) {
+          // If the client sends the XML content
+          attachments.push({
+            filename: `${doc.docName}.xml`,
+            content: doc.contentStr
+          });
+        }
+      });
+    }
+
+    const mailOptions = {
+      from: `"${process.env.MAIL_FROM_NAME || 'Vírgula Contábil'}" <${process.env.MAIL_FROM_ADDRESS || process.env.MAIL_USERNAME}>`,
+      to,
+      cc,
+      bcc,
+      subject,
+      html: htmlContent,
+      attachments
+    };
+
+    await transporter.sendMail(mailOptions);
+    res.json({ success: true, message: 'E-mail enviado com sucesso!' });
+  } catch (error: any) {
+    console.error('Erro ao enviar e-mail:', error);
+    res.status(500).json({ error: error.message || 'Erro interno ao enviar e-mail' });
+  }
+});
 
 app.post('/api/nfse/test-connection', authenticate, async (req, res) => {
   try {

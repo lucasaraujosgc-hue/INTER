@@ -93,7 +93,7 @@ function Sidebar({ activeTab, setActiveTab, onLogout }: { activeTab: string, set
   const navItems = [
     { label: 'Principal', isLabel: true },
     { id: 'Dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { id: 'Cobranças', icon: FileText, label: 'Cobranças', badge: 3 },
+    { id: 'Cobranças', icon: FileText, label: 'Cobranças' },
     { id: 'Clientes', icon: Users, label: 'Clientes' },
     { id: 'NFS-e', icon: Receipt, label: 'NFS-e' },
     { label: 'Integrações', isLabel: true },
@@ -200,6 +200,7 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
   const [clients, setClients] = useState<any[]>([]);
   const [cobrancas, setCobrancas] = useState<any[]>([]);
   const [nfses, setNfses] = useState<any[]>([]);
+  const [sysSettings, setSysSettings] = useState<any>({});
 
   useEffect(() => {
     fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } })
@@ -216,7 +217,45 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
       .then(res => res.json())
       .then(data => setNfses(data))
       .catch(console.error);
+
+    fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => setSysSettings(data))
+      .catch(console.error);
   }, [token, refreshKey]);
+
+  const [sendingEmail, setSendingEmail] = useState('');
+  const handleSendEmail = async (c: any) => {
+    const clientEmail = prompt('Digite o e-mail do cliente (ou deixe em branco para enviar um email de teste para contato@virgulacontabil.com.br):', '');
+    if (clientEmail === null) return; // Cancel
+    setSendingEmail(c.id);
+    try {
+      const emailRes = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          to: clientEmail || 'contato@virgulacontabil.com.br',
+          subject: `Cobrança - ${c.clientName || 'Cliente'} - Vírgula Contábil`,
+          messageBody: `Olá ${c.clientName ? c.clientName.split(' ')[0] : ''},\n\nSegue em anexo a sua cobrança com vencimento para ${c.due.split('-').reverse().join('/')} no valor de R$ ${c.value.toLocaleString('pt-BR', {minimumFractionDigits:2})}.\n\nSe tiver qualquer dúvida, estamos à disposição.`,
+          documents: [
+            { docName: `Boleto Bancário`, category: 'Boleto', dueDate: c.due, competence: c.due.substring(0, 7) }
+          ]
+        })
+      });
+      const data = await emailRes.json();
+      if (emailRes.ok) {
+        alert('E-mail enviado com sucesso!');
+      } else {
+        alert(`Erro ao enviar e-mail: ${data.error}`);
+      }
+    } catch (err) {
+      alert('Erro de conexão ao enviar e-mail');
+    }
+    setSendingEmail('');
+  };
 
   const received = cobrancas.filter(c => c.status === 'paid').reduce((acc, c) => acc + c.value, 0);
   const pending = cobrancas.filter(c => c.status === 'pending').reduce((acc, c) => acc + c.value, 0);
@@ -338,8 +377,12 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
                           <button className="w-7 h-7 rounded-md border border-brand-border flex items-center justify-center text-brand-muted hover:bg-brand-surface3 hover:text-brand-text hover:border-brand-border-green transition-colors" title="Emitir NFS-e">
                             <Receipt size={13} strokeWidth={2.5} />
                           </button>
-                          <button className="w-7 h-7 rounded-md border border-brand-border flex items-center justify-center text-brand-muted hover:bg-brand-surface3 hover:text-brand-text hover:border-brand-border-green transition-colors" title="Enviar e-mail">
-                            <Mail size={13} strokeWidth={2.5} />
+                          <button 
+                            onClick={() => handleSendEmail(c)}
+                            disabled={sendingEmail === c.id}
+                            className={`w-7 h-7 rounded-md border border-brand-border flex items-center justify-center transition-colors ${sendingEmail === c.id ? 'bg-brand-surface3 text-brand-green border-brand-green' : 'text-brand-muted hover:bg-brand-surface3 hover:text-brand-text hover:border-brand-border-green'}`} 
+                            title="Enviar e-mail">
+                            {sendingEmail === c.id ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} strokeWidth={2.5} />}
                           </button>
                         </div>
                       </td>
@@ -362,14 +405,18 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
                 <div className="text-[11px] text-brand-muted mt-0.5">API de Cobranças v2</div>
               </div>
               <div className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-brand-dim">
-                <div className="w-1.5 h-1.5 rounded-full bg-brand-dim" /> Desconectado
+                {sysSettings?.interClientId ? (
+                  <><div className="w-1.5 h-1.5 rounded-full bg-brand-green" /> Conectado</>
+                ) : (
+                  <><div className="w-1.5 h-1.5 rounded-full bg-brand-dim" /> Desconectado</>
+                )}
               </div>
             </div>
             <div className="p-3.5 px-4 text-[12.5px]">
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Client ID</span><span className="text-brand-text font-medium font-mono">Não configurado</span></div>
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Cert. Digital</span><span className="text-brand-dim font-medium">Não instalado</span></div>
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Boletos hoje</span><span className="text-brand-text font-medium">0 gerados</span></div>
-              <div className="flex justify-between py-1.5"><span className="text-brand-muted">Webhook</span><span className="text-brand-dim font-medium">Inativo</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Client ID</span><span className="text-brand-text font-medium font-mono">{sysSettings?.interClientId ? 'Configurado' : 'Não configurado'}</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Cert. Digital</span><span className="text-brand-dim font-medium">Não integrado local (Simulado)</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Boletos</span><span className="text-brand-text font-medium">{cobrancas.length} gerados</span></div>
+              <div className="flex justify-between py-1.5"><span className="text-brand-muted">Webhook</span><span className="text-brand-dim font-medium">{sysSettings?.interClientId ? 'Ativo' : 'Inativo'}</span></div>
             </div>
           </div>
 
@@ -382,13 +429,17 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
                 <div className="text-[11px] text-brand-muted mt-0.5">ABRASF v2.04 · SOAP/XML</div>
               </div>
               <div className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-brand-dim">
-                <div className="w-1.5 h-1.5 rounded-full bg-brand-dim" /> Não configurado
+                {sysSettings?.hasCertificate ? (
+                  <><div className="w-1.5 h-1.5 rounded-full bg-brand-green" /> Operante</>
+                ) : (
+                  <><div className="w-1.5 h-1.5 rounded-full bg-brand-dim" /> Não configurado</>
+                )}
               </div>
             </div>
             <div className="p-3.5 px-4 text-[12.5px]">
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Município</span><span className="text-brand-text font-medium">Não configurado</span></div>
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">CNPJ Prestador</span><span className="text-brand-text font-medium font-mono">Não configurado</span></div>
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Cert. ICP-Brasil</span><span className="text-brand-dim font-medium">Não instalado</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Município</span><span className="text-brand-text font-medium">{sysSettings?.codigoMunicipio || '2929305'}</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">CNPJ Prestador</span><span className="text-brand-text font-medium font-mono">{sysSettings?.prestadorCnpj || 'Configurado'}</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Cert. ICP-Brasil</span><span className="text-brand-dim font-medium">{sysSettings?.hasCertificate ? 'Instalado' : 'Não instalado'}</span></div>
               <div className="flex justify-between py-1.5"><span className="text-brand-muted">Schema</span><span className="text-brand-text font-medium">nfse.xsd v2.04</span></div>
             </div>
             <div className="p-3 px-4 pb-4 bg-brand-surface2/30">
