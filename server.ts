@@ -102,8 +102,20 @@ function signNode(xml: string, xpath: string, keyPem: string, certPem: string): 
   return sig.getSignedXml();
 }
 
+function escapeXml(unsafe: string) {
+  return unsafe.replace(/[<>&'"]/g, (c) => {
+    switch (c) {
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '&': return '&amp;';
+      case '\'': return '&apos;';
+      case '"': return '&quot;';
+    }
+    return c;
+  });
+}
+
 function generateRpsXml(data: any, settings: any) {
-  // Geração do XML do Lote RPS seguindo o padrão ABRASF v2.02 Adaptações do Padrão Nacional
   const idRps = `RPS_${Date.now()}`;
   const idLote = `LOTE_${Date.now()}`;
   
@@ -111,14 +123,21 @@ function generateRpsXml(data: any, settings: any) {
   const isCpf = tomadorCpfCnpj.length === 11;
   const cpfCnpjTag = isCpf ? `<Cpf>${tomadorCpfCnpj}</Cpf>` : `<Cnpj>${tomadorCpfCnpj}</Cnpj>`;
 
+  // ABRASF 2.02 requires specific formats
+  const dataEmissao = new Date().toISOString().split('.')[0]; // YYYY-MM-DDTHH:MM:SS
+  const competencia = data.competencia || new Date().toISOString().split('T')[0];
+  const valorServicos = Number(data.valor).toFixed(2);
+  const aliquota = (Number(data.aliquota) || 2.01).toFixed(2);
+  const valorIss = (Number(data.valor) * (Number(data.aliquota || 2.01) / 100)).toFixed(2);
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <EnviarLoteRpsSincronoEnvio xmlns="http://www.abrasf.org.br/nfse.xsd">
 	<LoteRps Id="${idLote}" versao="2.02">
 		<NumeroLote>${Math.floor(Math.random() * 10000)}</NumeroLote>
 		<CpfCnpj>
-			<Cnpj>${(settings.prestadorCnpj || '00000000000100').replace(/\D/g, '')}</Cnpj>
+			<Cnpj>${(settings.prestadorCnpj || '52613515000160').replace(/\D/g, '')}</Cnpj>
 		</CpfCnpj>
-		<InscricaoMunicipal>${settings.prestadorIm || '12345'}</InscricaoMunicipal>
+		<InscricaoMunicipal>${settings.prestadorIm || '3181602194'}</InscricaoMunicipal>
 		<QuantidadeRps>1</QuantidadeRps>
 		<ListaRps>
 			<Rps>
@@ -129,13 +148,13 @@ function generateRpsXml(data: any, settings: any) {
 							<Serie>1</Serie>
 							<Tipo>1</Tipo>
 						</IdentificacaoRps>
-						<DataEmissao>${new Date().toISOString().split('T')[0]}</DataEmissao>
+						<DataEmissao>${dataEmissao}</DataEmissao>
 						<Status>1</Status>
 					</Rps>
-					<Competencia>${data.competencia || new Date().toISOString().split('T')[0]}</Competencia>
+					<Competencia>${competencia}</Competencia>
 					<Servico>
 						<Valores>
-							<ValorServicos>${data.valor.toFixed(2)}</ValorServicos>
+							<ValorServicos>${valorServicos}</ValorServicos>
 							<ValorDeducoes>0.00</ValorDeducoes>
 							<ValorPis>0.00</ValorPis>
 							<ValorCofins>0.00</ValorCofins>
@@ -143,25 +162,26 @@ function generateRpsXml(data: any, settings: any) {
 							<ValorIr>0.00</ValorIr>
 							<ValorCsll>0.00</ValorCsll>
 							<OutrasRetencoes>0.00</OutrasRetencoes>
-							<ValorIss>${(data.valor * (data.aliquota / 100)).toFixed(2)}</ValorIss>
-							<Aliquota>${data.aliquota.toFixed(2)}</Aliquota>
+							<ValorIss>${valorIss}</ValorIss>
+							<Aliquota>${aliquota}</Aliquota>
 							<DescontoIncondicionado>0.00</DescontoIncondicionado>
 							<DescontoCondicionado>0.00</DescontoCondicionado>
 						</Valores>
 						<IssRetido>${data.issRetido || 2}</IssRetido>
+						${data.issRetido == 1 ? '<ResponsavelRetencao>1</ResponsavelRetencao>' : ''}
 						<ItemListaServico>${(data.itemLc116 || settings.itemLc116 || '1719').replace('.', '')}</ItemListaServico>
 						<CodigoCnae>${data.cnae || settings.cnae || '6920601'}</CodigoCnae>
 						<CodigoTributacaoMunicipio>${(data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio || '1719').replace('.', '')}</CodigoTributacaoMunicipio>
-						<Discriminacao>${data.descricao}</Discriminacao>
+						<Discriminacao>${escapeXml(data.descricao || '')}</Discriminacao>
 						<CodigoMunicipio>${settings.codigoMunicipio || '2929305'}</CodigoMunicipio>
 						<ExigibilidadeISS>1</ExigibilidadeISS>
 						<MunicipioIncidencia>${settings.codigoMunicipio || '2929305'}</MunicipioIncidencia>
 					</Servico>
 					<Prestador>
 						<CpfCnpj>
-							<Cnpj>${(settings.prestadorCnpj || '00000000000100').replace(/\D/g, '')}</Cnpj>
+							<Cnpj>${(settings.prestadorCnpj || '52613515000160').replace(/\D/g, '')}</Cnpj>
 						</CpfCnpj>
-						<InscricaoMunicipal>${settings.prestadorIm || '12345'}</InscricaoMunicipal>
+						<InscricaoMunicipal>${settings.prestadorIm || '3181602194'}</InscricaoMunicipal>
 					</Prestador>
 					<Tomador>
 						<IdentificacaoTomador>
@@ -169,20 +189,20 @@ function generateRpsXml(data: any, settings: any) {
 								${cpfCnpjTag}
 							</CpfCnpj>
 						</IdentificacaoTomador>
-						${data.cliente ? `<RazaoSocial>${data.cliente}</RazaoSocial>` : ''}
+						<RazaoSocial>${escapeXml(data.cliente || '')}</RazaoSocial>
 						<Endereco>
-							${data.clienteEndereco ? `<Endereco>${data.clienteEndereco}</Endereco>` : ''}
-							${data.clienteNumero ? `<Numero>${data.clienteNumero}</Numero>` : ''}
-							${data.clienteComplemento ? `<Complemento>${data.clienteComplemento}</Complemento>` : ''}
-							${data.clienteBairro ? `<Bairro>${data.clienteBairro}</Bairro>` : ''}
-							${data.clienteCodigoMunicipio ? `<CodigoMunicipio>${data.clienteCodigoMunicipio}</CodigoMunicipio>` : '<CodigoMunicipio>2929305</CodigoMunicipio>'}
-							${data.clienteUf ? `<Uf>${data.clienteUf}</Uf>` : '<Uf>BA</Uf>'}
+							<Endereco>${escapeXml(data.clienteEndereco || '')}</Endereco>
+							<Numero>${escapeXml(String(data.clienteNumero || ''))}</Numero>
+							${data.clienteComplemento ? `<Complemento>${escapeXml(data.clienteComplemento)}</Complemento>` : ''}
+							<Bairro>${escapeXml(data.clienteBairro || '')}</Bairro>
+							<CodigoMunicipio>${data.clienteCodigoMunicipio || '2929305'}</CodigoMunicipio>
+							<Uf>${data.clienteUf || 'BA'}</Uf>
 							<CodigoPais>1058</CodigoPais>
-							${data.clienteCep ? `<Cep>${data.clienteCep}</Cep>` : ''}
+							<Cep>${(data.clienteCep || '').replace(/\D/g, '')}</Cep>
 						</Endereco>
 						<Contato>
-							${data.clienteTelefone ? `<Telefone>${data.clienteTelefone.replace(/\D/g, '')}</Telefone>` : ''}
-							${data.clienteEmail ? `<Email>${data.clienteEmail}</Email>` : ''}
+							<Telefone>${(data.clienteTelefone || '').replace(/\D/g, '')}</Telefone>
+							<Email>${data.clienteEmail || ''}</Email>
 						</Contato>
 					</Tomador>
 					<RegimeEspecialTributacao>${data.regimeEspecialTributacao || settings.regimeEspecialTributacao || 6}</RegimeEspecialTributacao>
