@@ -10,10 +10,11 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "postinstall": "puppeteer browsers install chrome --path .puppeteer-cache"
+    "postinstall": "puppeteer browsers install chrome"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
+    "@sparticuz/chromium": "^147.0.2",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "@xmldom/xmldom": "^0.9.9",
@@ -29,6 +30,7 @@
     "nodemailer": "^8.0.5",
     "pem": "^1.14.8",
     "puppeteer": "^24.42.0",
+    "puppeteer-core": "^24.42.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "vite": "^6.2.0",

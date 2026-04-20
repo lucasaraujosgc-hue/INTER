@@ -13,7 +13,8 @@ import jwt from 'jsonwebtoken';
 import cors from 'cors';
 import forge from 'node-forge';
 import nodemailer from 'nodemailer';
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
 
 const app = express();
 const PORT = 3000;
@@ -662,11 +663,12 @@ async function generateAndSaveNfsePdf(nfseId: string, cnpj: string, codigoVerifi
   const cleanCnpj = cnpj.replace(/\D/g, '');
   const url = `https://saogoncalodoscamposba.webiss.com.br/externo/nfse/visualizar/${cleanCnpj}/${codigoVerificacao}/${numeroNfse}`;
   
-  const executablePath = path.join(process.cwd(), '.puppeteer-cache', 'chrome', 'linux-147.0.7727.57', 'chrome-linux64', 'chrome');
+  const executablePath = await chromium.executablePath();
   const browser = await puppeteer.launch({ 
-    headless: true, 
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    executablePath: fs.existsSync(executablePath) ? executablePath : undefined
+    args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
+    executablePath: executablePath,
+    headless: chromium.headless
   });
   try {
     const page = await browser.newPage();
