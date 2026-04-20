@@ -662,7 +662,13 @@ async function generateAndSaveNfsePdf(nfseId: string, cnpj: string, codigoVerifi
   const cleanCnpj = cnpj.replace(/\D/g, '');
   const url = `https://saogoncalodoscamposba.webiss.com.br/externo/nfse/visualizar/${cleanCnpj}/${codigoVerificacao}/${numeroNfse}`;
   
-  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+  const browser = await puppeteer.launch({ 
+    headless: true, 
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    executablePath: fs.existsSync('/app/applet/.puppeteer-cache/chrome/linux-147.0.7727.57/chrome-linux64/chrome') 
+      ? '/app/applet/.puppeteer-cache/chrome/linux-147.0.7727.57/chrome-linux64/chrome'
+      : undefined
+  });
   try {
     const page = await browser.newPage();
     await page.goto(url, { waitUntil: 'networkidle0', timeout: 15000 });
