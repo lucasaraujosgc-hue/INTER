@@ -5,7 +5,7 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
   const [nfses, setNfses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [viewingXml, setViewingXml] = useState<string | null>(null);
+  const [viewingXml, setViewingXml] = useState<any | null>(null);
 
   useEffect(() => {
     fetchNfse();
@@ -107,10 +107,10 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
                       <button 
                         onClick={() => {
                           if (!n.xml) {
-                            alert('XML não disponível para esta nota.');
+                            alert('Erro: sem dados para exibir.');
                             return;
                           }
-                          setViewingXml(n.xml);
+                          setViewingXml(n);
                         }}
                         className="text-brand-muted hover:text-brand-text transition-colors"
                         title="Visualizar XML"
@@ -138,15 +138,34 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-brand-surface border border-brand-border rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl">
             <div className="flex justify-between items-center p-4 border-b border-brand-border">
-              <h3 className="text-lg font-bold text-brand-text">Visualizar XML</h3>
+              <div>
+                <h3 className="text-lg font-bold text-brand-text">Visualizar Log da NFS-e</h3>
+                {viewingXml.numero && <p className="text-xs text-brand-muted mt-1">Número gerado: {viewingXml.numero}</p>}
+                {viewingXml.codigoVerificacao && <p className="text-[11px] font-mono text-brand-green mt-1">Código Verificação: {viewingXml.codigoVerificacao}</p>}
+              </div>
               <button onClick={() => setViewingXml(null)} className="text-brand-muted hover:text-brand-text">
                 <X size={24} />
               </button>
             </div>
-            <div className="p-4 overflow-auto flex-1">
-              <pre className="text-xs text-brand-muted font-mono whitespace-pre-wrap break-all bg-brand-surface2 p-4 rounded-lg border border-brand-border">
-                {viewingXml}
-              </pre>
+            <div className="p-4 overflow-auto flex-1 flex flex-col gap-4">
+              {viewingXml.responseXml && (
+                <div>
+                  <h4 className="text-sm font-bold text-brand-dim mb-2 flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-brand-green"></div> Retorno do Servidor (WebISS)
+                  </h4>
+                  <pre className="text-xs text-brand-muted font-mono whitespace-pre-wrap break-all bg-[#0a0a0a] p-4 rounded-lg border border-brand-border">
+                    {viewingXml.responseXml}
+                  </pre>
+                </div>
+              )}
+              <div>
+                <h4 className="text-sm font-bold text-brand-dim mb-2 flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-blue-500"></div> XML Enviado
+                </h4>
+                <pre className="text-xs text-brand-muted font-mono whitespace-pre-wrap break-all bg-[#0a0a0a] p-4 rounded-lg border border-brand-border opacity-70">
+                  {viewingXml.xml}
+                </pre>
+              </div>
             </div>
             <div className="p-4 border-t border-brand-border flex justify-end">
               <button 

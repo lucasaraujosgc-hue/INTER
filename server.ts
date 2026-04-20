@@ -503,6 +503,7 @@ app.post('/api/cobrancas', authenticate, async (req, res) => {
       const signedXml = signXml(xmlRps, keyPem, certPem);
       
       let numeroNfse = null;
+      let codigoVerificacao = null;
       try {
         const soapResponse = await sendSoapRequest(
           WEBSERVICE_URL,
@@ -514,7 +515,14 @@ app.post('/api/cobrancas', authenticate, async (req, res) => {
         console.log('SOAP Response in Cobrança:', soapResponse);
 
         const doc = new DOMParser().parseFromString(soapResponse, 'text/xml');
-        const mensagens = doc.getElementsByTagName('MensagemRetorno');
+        let innerXmlString = soapResponse;
+        const outputXMLNode = doc.getElementsByTagName('outputXML')[0];
+        if (outputXMLNode && outputXMLNode.textContent) {
+          innerXmlString = outputXMLNode.textContent;
+        }
+        const innerDoc = new DOMParser().parseFromString(innerXmlString, 'text/xml');
+
+        const mensagens = innerDoc.getElementsByTagName('MensagemRetorno');
         if (mensagens.length > 0) {
           let errorMessages = [];
           for (let i = 0; i < mensagens.length; i++) {
@@ -526,13 +534,18 @@ app.post('/api/cobrancas', authenticate, async (req, res) => {
           if (errorMessages.length > 0) {
             return res.status(400).json({
               error: 'Erro retornado pela Prefeitura na emissão da NFS-e: ' + errorMessages.join(' | '),
-              xmlPreview: signedXml
+              xmlPreview: signedXml,
+              responseXml: innerXmlString
             });
           }
         }
 
-        const numeroNfseNode = doc.getElementsByTagName('Numero')[0];
+        const numeroNfseNode = innerDoc.getElementsByTagName('Numero')[0];
         if (numeroNfseNode) numeroNfse = numeroNfseNode.textContent;
+        
+        const cvNode = innerDoc.getElementsByTagName('CodigoVerificacao')[0];
+        if (cvNode) codigoVerificacao = cvNode.textContent;
+        
       } catch (soapError: any) {
         console.error('Erro ao enviar SOAP:', soapError.message);
         return res.status(500).json({ error: 'Erro ao emitir NFS-e no WebService: ' + soapError.message, xmlPreview: signedXml });
@@ -542,12 +555,14 @@ app.post('/api/cobrancas', authenticate, async (req, res) => {
       nfseData = {
         id: numeroNfse ? `NFS-${numeroNfse}` : `NFS-${Date.now()}`,
         numero: numeroNfse,
+        codigoVerificacao,
         client: data.clienteId || data.cliente,
         clientName: data.cliente,
         value: data.valor,
         issueDate: new Date().toISOString().split('T')[0],
         status: numeroNfse ? 'issued' : 'pending',
-        xml: signedXml
+        xml: signedXml,
+        responseXml: soapResponse
       };
       nfseList.push(nfseData);
       fs.writeFileSync(nfseFile, JSON.stringify(nfseList));
@@ -649,8 +664,14 @@ app.post('/api/nfse/emitir', authenticate, async (req, res) => {
       console.log('SOAP Response:', soapResponse);
       
       const doc = new DOMParser().parseFromString(soapResponse, 'text/xml');
+      let innerXmlString = soapResponse;
+      const outputXMLNode = doc.getElementsByTagName('outputXML')[0];
+      if (outputXMLNode && outputXMLNode.textContent) {
+        innerXmlString = outputXMLNode.textContent;
+      }
+      const innerDoc = new DOMParser().parseFromString(innerXmlString, 'text/xml');
       
-      const mensagens = doc.getElementsByTagName('MensagemRetorno');
+      const mensagens = innerDoc.getElementsByTagName('MensagemRetorno');
       if (mensagens.length > 0) {
         let errorMessages = [];
         for (let i = 0; i < mensagens.length; i++) {
@@ -662,32 +683,38 @@ app.post('/api/nfse/emitir', authenticate, async (req, res) => {
         if (errorMessages.length > 0) {
           return res.status(400).json({
             error: 'Erro retornado pela Prefeitura: ' + errorMessages.join(' | '),
-            xmlPreview: signedXml
+            xmlPreview: signedXml,
+            responseXml: innerXmlString
           });
         }
       }
 
-      const numeroNfseNode = doc.getElementsByTagName('Numero')[0];
+      const numeroNfseNode = innerDoc.getElementsByTagName('Numero')[0];
       const numeroNfse = numeroNfseNode ? numeroNfseNode.textContent : null;
+      
+      const codigoVerificacaoNode = innerDoc.getElementsByTagName('CodigoVerificacao')[0];
+      const codigoVerificacao = codigoVerificacaoNode ? codigoVerificacaoNode.textContent : null;
 
       // 4. Salvar a nota fiscal no banco de dados local
       const nfseList = JSON.parse(fs.readFileSync(nfseFile, 'utf-8'));
       const newNfse = {
         id: numeroNfse ? `NFS-${numeroNfse}` : `NFS-${Date.now()}`,
         numero: numeroNfse,
+        codigoVerificacao: codigoVerificacao,
         client: data.clienteId || data.cliente,
         clientName: data.cliente,
         value: data.valor,
         issueDate: new Date().toISOString().split('T')[0],
         status: numeroNfse ? 'issued' : 'pending',
-        xml: signedXml
+        xml: signedXml,
+        responseXml: innerXmlString
       };
       nfseList.push(newNfse);
       fs.writeFileSync(nfseFile, JSON.stringify(nfseList));
 
       res.json({
         success: true,
-        message: 'RPS gerado, assinado e enviado com sucesso.',
+        message: numeroNfse ? `NFS-e gerada com sucesso! Número: ${numeroNfse}` : 'RPS gerado, assinado e enviado com sucesso.',
         signedXml,
         nfse: newNfse
       });

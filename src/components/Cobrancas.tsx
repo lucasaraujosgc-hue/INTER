@@ -79,9 +79,21 @@ export default function Cobrancas({ token, refreshKey }: { token: string, refres
                   <td className="px-6 py-4">
                     <div className="flex gap-2">
                       <button 
-                        onClick={() => alert('Visualizar cobrança não implementado.')}
+                        onClick={() => {
+                          if (c.nfse) {
+                            fetch(`/api/nfse`) // Quick hack, realistically you fetch specific, but since we have all locally:
+                              .then(res => res.json())
+                              .then(data => {
+                                const matched = data.find((n: any) => n.id === c.nfse);
+                                if (matched) alert(`Status da Transmissão:\nNúmero: ${matched.numero || 'Pendente'}\nCódigo Verificação: ${matched.codigoVerificacao || 'N/A'}\n\nAbra a aba NFS-e para ver o XML completo e o Retorno do Servidor.`);
+                                else alert('NFS-e não encontrada.');
+                              });
+                          } else {
+                            alert('Visualizar cobrança não implementado.');
+                          }
+                        }}
                         className="text-brand-muted hover:text-brand-text transition-colors"
-                        title="Visualizar Cobrança"
+                        title="Visualizar Status/Cobrança"
                       >
                         <Eye size={16} />
                       </button>
