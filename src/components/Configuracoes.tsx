@@ -11,7 +11,14 @@ export default function Configuracoes({ token }: { token: string }) {
   const [interSettings, setInterSettings] = useState({
     interClientId: '',
     interClientSecret: '',
-    interContaCorrente: ''
+    interContaCorrente: '',
+    itemLc116: '1719',
+    aliquota: 2.01,
+    codigoTributacaoMunicipio: '1719',
+    cnae: '6920601',
+    regimeEspecialTributacao: 6,
+    optanteSimplesNacional: 1,
+    incentivoFiscal: 2
   });
   const [interLoading, setInterLoading] = useState(false);
   const [interSuccess, setInterSuccess] = useState('');
@@ -25,7 +32,14 @@ export default function Configuracoes({ token }: { token: string }) {
           setInterSettings({
             interClientId: data.interClientId || '',
             interClientSecret: data.interClientSecret || '',
-            interContaCorrente: data.interContaCorrente || ''
+            interContaCorrente: data.interContaCorrente || '',
+            itemLc116: data.itemLc116 || '1719',
+            aliquota: data.aliquota || 2.01,
+            codigoTributacaoMunicipio: data.codigoTributacaoMunicipio || '1719',
+            cnae: data.cnae || '6920601',
+            regimeEspecialTributacao: data.regimeEspecialTributacao || 6,
+            optanteSimplesNacional: data.optanteSimplesNacional || 1,
+            incentivoFiscal: data.incentivoFiscal || 2
           });
         }
       })
@@ -102,6 +116,111 @@ export default function Configuracoes({ token }: { token: string }) {
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 flex flex-col gap-6">
+      <div className="bg-brand-surface border border-brand-border rounded-xl p-6 max-w-2xl">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-lg bg-brand-green/10 text-brand-green flex items-center justify-center">
+            <Shield size={20} strokeWidth={2.5} />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-brand-text">Configurações Fiscais e NFS-e</h2>
+            <p className="text-sm text-brand-muted">Defina os valores padrão para emissão de nota fiscal</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveInterSettings} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-brand-muted uppercase tracking-wide mb-2">Item LC 116 Padrao</label>
+              <input
+                type="text"
+                value={interSettings.itemLc116}
+                onChange={e => setInterSettings({...interSettings, itemLc116: e.target.value})}
+                className="w-full bg-brand-surface2 border border-brand-border rounded-xl px-4 py-3 text-brand-text outline-none focus:border-brand-green transition-colors"
+                placeholder="Ex: 1719"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-brand-muted uppercase tracking-wide mb-2">Alíquota Padrão (%)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={interSettings.aliquota}
+                onChange={e => setInterSettings({...interSettings, aliquota: Number(e.target.value)})}
+                className="w-full bg-brand-surface2 border border-brand-border rounded-xl px-4 py-3 text-brand-text outline-none focus:border-brand-green transition-colors"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-brand-muted uppercase tracking-wide mb-2">Cod. Tributação Mun. Padrão</label>
+              <input
+                type="text"
+                value={interSettings.codigoTributacaoMunicipio}
+                onChange={e => setInterSettings({...interSettings, codigoTributacaoMunicipio: e.target.value})}
+                className="w-full bg-brand-surface2 border border-brand-border rounded-xl px-4 py-3 text-brand-text outline-none focus:border-brand-green transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-brand-muted uppercase tracking-wide mb-2">CNAE Padrão</label>
+              <input
+                type="text"
+                value={interSettings.cnae}
+                onChange={e => setInterSettings({...interSettings, cnae: e.target.value})}
+                className="w-full bg-brand-surface2 border border-brand-border rounded-xl px-4 py-3 text-brand-text outline-none focus:border-brand-green transition-colors"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-[11px] font-semibold text-brand-muted uppercase tracking-wide mb-2">Regime Especial</label>
+              <select
+                value={interSettings.regimeEspecialTributacao}
+                onChange={e => setInterSettings({...interSettings, regimeEspecialTributacao: Number(e.target.value)})}
+                className="w-full bg-brand-surface2 border border-brand-border rounded-xl px-2 py-3 text-brand-text outline-none focus:border-brand-green transition-colors text-sm"
+              >
+                <option value={1}>1 - Micro Mun</option>
+                <option value={2}>2 - Estimativa</option>
+                <option value={3}>3 - Soc Prof.</option>
+                <option value={4}>4 - Coop.</option>
+                <option value={5}>5 - MEI</option>
+                <option value={6}>6 - Simples Nacional</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-brand-muted uppercase tracking-wide mb-2">Optante Simples</label>
+              <select
+                value={interSettings.optanteSimplesNacional}
+                onChange={e => setInterSettings({...interSettings, optanteSimplesNacional: Number(e.target.value)})}
+                className="w-full bg-brand-surface2 border border-brand-border rounded-xl px-2 py-3 text-brand-text outline-none focus:border-brand-green transition-colors text-sm"
+              >
+                <option value={1}>1 - Sim</option>
+                <option value={2}>2 - Não</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-brand-muted uppercase tracking-wide mb-2">Incentivo Fiscal</label>
+              <select
+                value={interSettings.incentivoFiscal}
+                onChange={e => setInterSettings({...interSettings, incentivoFiscal: Number(e.target.value)})}
+                className="w-full bg-brand-surface2 border border-brand-border rounded-xl px-2 py-3 text-brand-text outline-none focus:border-brand-green transition-colors text-sm"
+              >
+                <option value={1}>1 - Sim</option>
+                <option value={2}>2 - Não</option>
+              </select>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={interLoading}
+            className="bg-brand-surface2 border border-brand-border hover:border-brand-green hover:text-brand-green text-brand-text font-bold py-3 px-6 rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mt-4"
+          >
+            <Save size={18} />
+            {interLoading ? 'Salvando...' : 'Salvar Configurações Fiscais'}
+          </button>
+        </form>
+      </div>
+
       <div className="bg-brand-surface border border-brand-border rounded-xl p-6 max-w-2xl">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-lg bg-brand-green/10 text-brand-green flex items-center justify-center">

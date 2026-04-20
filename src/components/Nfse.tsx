@@ -173,12 +173,15 @@ function NewNfseModal({ onClose, onSuccess, token }: { onClose: () => void, onSu
     cliente: '',
     valor: 300,
     descricao: 'Prestação de serviços contábeis, compreendendo escrituração contábil e fiscal, apuração de tributos, elaboração e entrega de obrigações acessórias, assessoria e consultoria contábil, referente ao período de xx/202x.',
-    itemLc116: '',
-    aliquota: 0,
-    codigoTributacaoMunicipio: '',
-    cnae: '',
+    itemLc116: '1719',
+    aliquota: 2.01,
+    codigoTributacaoMunicipio: '1719',
+    cnae: '6920601',
     competencia: new Date().toISOString().split('T')[0],
-    issRetido: 2
+    issRetido: 2,
+    regimeEspecialTributacao: 6,
+    optanteSimplesNacional: 1,
+    incentivoFiscal: 2
   });
 
   useEffect(() => {
@@ -192,10 +195,10 @@ function NewNfseModal({ onClose, onSuccess, token }: { onClose: () => void, onSu
       .then(data => {
         setFormData(prev => ({
           ...prev,
-          itemLc116: data.itemLc116 || '17.19',
-          aliquota: data.aliquota || 3.00,
-          codigoTributacaoMunicipio: data.codigoTributacaoMunicipio || '',
-          cnae: data.cnae || ''
+          itemLc116: data.itemLc116 || '1719',
+          aliquota: data.aliquota || 2.01,
+          codigoTributacaoMunicipio: data.codigoTributacaoMunicipio || '1719',
+          cnae: data.cnae || '6920601'
         }));
       })
       .catch(console.error);
@@ -357,6 +360,46 @@ function NewNfseModal({ onClose, onSuccess, token }: { onClose: () => void, onSu
                 <select 
                   value={formData.issRetido}
                   onChange={e => setFormData({...formData, issRetido: Number(e.target.value)})}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                >
+                  <option value={1}>Sim (1)</option>
+                  <option value={2}>Não (2)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Regime Especial Trib.</label>
+                <select 
+                  value={formData.regimeEspecialTributacao}
+                  onChange={e => setFormData({...formData, regimeEspecialTributacao: Number(e.target.value)})}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                >
+                  <option value={1}>1 - Microempresa Municipal</option>
+                  <option value={2}>2 - Estimativa</option>
+                  <option value={3}>3 - Sociedade de Profissionais</option>
+                  <option value={4}>4 - Cooperativa</option>
+                  <option value={5}>5 - MEI</option>
+                  <option value={6}>6 - ME ou EPP do Simples Nacional</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Optante Simples Nac.</label>
+                <select 
+                  value={formData.optanteSimplesNacional}
+                  onChange={e => setFormData({...formData, optanteSimplesNacional: Number(e.target.value)})}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                >
+                  <option value={1}>Sim (1)</option>
+                  <option value={2}>Não (2)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Incentivo Fiscal</label>
+                <select 
+                  value={formData.incentivoFiscal}
+                  onChange={e => setFormData({...formData, incentivoFiscal: Number(e.target.value)})}
                   className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
                 >
                   <option value={1}>Sim (1)</option>

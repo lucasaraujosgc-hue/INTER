@@ -150,8 +150,8 @@ function generateRpsXml(data: any, settings: any) {
 						</Valores>
 						<IssRetido>${data.issRetido || 2}</IssRetido>
 						<ItemListaServico>${(data.itemLc116 || settings.itemLc116 || '1719').replace('.', '')}</ItemListaServico>
-						${data.cnae || settings.cnae ? `<CodigoCnae>${data.cnae || settings.cnae}</CodigoCnae>` : ''}
-						${data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio ? `<CodigoTributacaoMunicipio>${data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio}</CodigoTributacaoMunicipio>` : ''}
+						<CodigoCnae>${data.cnae || settings.cnae || '6920601'}</CodigoCnae>
+						<CodigoTributacaoMunicipio>${(data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio || '1719').replace('.', '')}</CodigoTributacaoMunicipio>
 						<Discriminacao>${data.descricao}</Discriminacao>
 						<CodigoMunicipio>${settings.codigoMunicipio || '2929305'}</CodigoMunicipio>
 						<ExigibilidadeISS>1</ExigibilidadeISS>
@@ -185,8 +185,9 @@ function generateRpsXml(data: any, settings: any) {
 							${data.clienteEmail ? `<Email>${data.clienteEmail}</Email>` : ''}
 						</Contato>
 					</Tomador>
-					<OptanteSimplesNacional>1</OptanteSimplesNacional>
-					<IncentivoFiscal>2</IncentivoFiscal>
+					<RegimeEspecialTributacao>${data.regimeEspecialTributacao || settings.regimeEspecialTributacao || 6}</RegimeEspecialTributacao>
+					<OptanteSimplesNacional>${data.optanteSimplesNacional || settings.optanteSimplesNacional || 1}</OptanteSimplesNacional>
+					<IncentivoFiscal>${data.incentivoFiscal || settings.incentivoFiscal || 2}</IncentivoFiscal>
 				</InfDeclaracaoPrestacaoServico>
 			</Rps>
 		</ListaRps>
@@ -466,6 +467,18 @@ app.post('/api/cobrancas', authenticate, async (req, res) => {
         data.clienteCep = clientInfo.cep ? clientInfo.cep.replace(/\D/g, '') : (clientInfo.zipCode ? clientInfo.zipCode.replace(/\D/g, '') : '');
         data.clienteTelefone = clientInfo.telefone ? clientInfo.telefone.replace(/\D/g, '') : (clientInfo.phone ? clientInfo.phone.replace(/\D/g, '') : '');
         data.clienteEmail = clientInfo.email || '';
+      }
+
+      data.itemLc116 = settings.itemLc116 || '1719';
+      data.cnae = settings.cnae || '6920601';
+      data.codigoTributacaoMunicipio = settings.codigoTributacaoMunicipio || '1719';
+      data.aliquota = settings.aliquota || 2.01;
+      data.issRetido = settings.issRetido || 2;
+      data.regimeEspecialTributacao = settings.regimeEspecialTributacao || 6;
+      data.optanteSimplesNacional = settings.optanteSimplesNacional || 1;
+      data.incentivoFiscal = settings.incentivoFiscal || 2;
+      if (!data.descricao) {
+        data.descricao = `Prestação de serviços contábeis, compreendendo escrituração contábil e fiscal, apuração de tributos, elaboração e entrega de obrigações acessórias, assessoria e consultoria contábil, referente ao período de xx/202x.`;
       }
 
       const xmlRps = generateRpsXml(data, settings);
