@@ -185,7 +185,7 @@ function Topbar({ title, onNew }: { title: string, onNew: () => void }) {
         </div>
         <button className="relative bg-brand-surface2 border border-brand-border w-9 h-9 rounded-lg flex items-center justify-center text-brand-muted hover:text-brand-text hover:border-brand-border-green transition-colors cursor-pointer">
           <Bell size={16} strokeWidth={2} />
-          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center border-2 border-brand-bg">3</span>
+          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-[9px] font-bold text-white flex items-center justify-center border-2 border-brand-bg"></span>
         </button>
         <button onClick={onNew} className="flex items-center gap-1.5 px-4 py-2 bg-brand-green hover:bg-brand-green-dim text-black rounded-lg text-[13px] font-semibold transition-colors cursor-pointer">
           <Plus size={16} strokeWidth={2.5} />
