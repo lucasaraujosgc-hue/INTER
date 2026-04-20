@@ -196,7 +196,7 @@ function NewNfseModal({ onClose, onSuccess, token }: { onClose: () => void, onSu
     aliquota: 2.01,
     codigoTributacaoMunicipio: '1719',
     cnae: '6920601',
-    competencia: new Date().toISOString().split('T')[0],
+    competencia: new Date().toISOString().slice(0, 7), // YYYY-MM
     issRetido: 2,
     regimeEspecialTributacao: 6,
     optanteSimplesNacional: 1,
@@ -365,7 +365,7 @@ function NewNfseModal({ onClose, onSuccess, token }: { onClose: () => void, onSu
               <div>
                 <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Competência</label>
                 <input 
-                  type="date" 
+                  type="month" 
                   value={formData.competencia}
                   onChange={e => setFormData({...formData, competencia: e.target.value})}
                   className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"

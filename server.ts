@@ -93,7 +93,7 @@ function signNode(xml: string, xpath: string, keyPem: string, certPem: string): 
     digestAlgorithm: "http://www.w3.org/2000/09/xmldsig#sha1"
   });
   
-  sig.keyInfoProvider = new CustomKeyInfo(certPem);
+  (sig as any).keyInfoProvider = new CustomKeyInfo(certPem);
   
   sig.computeSignature(xml, {
     location: { reference: xpath, action: "append" }
@@ -119,16 +119,26 @@ function generateRpsXml(data: any, settings: any) {
   const idRps = `RPS_${Date.now()}`;
   const idLote = `LOTE_${Date.now()}`;
   
-  const tomadorCpfCnpj = data.clienteCpfCnpj ? data.clienteCpfCnpj.replace(/\D/g, '') : '08570758000177';
+  const tomadorCpfCnpj = data.clienteCpfCnpj ? data.clienteCpfCnpj.replace(/\D/g, '') : '';
   const isCpf = tomadorCpfCnpj.length === 11;
-  const cpfCnpjTag = isCpf ? `<Cpf>${tomadorCpfCnpj}</Cpf>` : `<Cnpj>${tomadorCpfCnpj}</Cnpj>`;
+  const cpfCnpjTag = tomadorCpfCnpj ? (isCpf ? `<Cpf>${tomadorCpfCnpj}</Cpf>` : `<Cnpj>${tomadorCpfCnpj}</Cnpj>`) : '';
 
-  // ABRASF 2.02 requires specific formats
-  const dataEmissao = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-  const competencia = data.competencia || new Date().toISOString().split('T')[0];
-  const valorServicos = Number(data.valor).toFixed(2);
+  // ABRASF 2.02 usually takes YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS
+  // User explicitly requested YYYY-MM-DD for everything.
+  const now = new Date();
+  const dataEmissao = now.toISOString().split('T')[0]; // YYYY-MM-DD
+  
+  // Competencia: handle YYYY-MM (month picker) or full YYYY-MM-DD
+  let competencia = data.competencia || now.toISOString().split('T')[0];
+  if (competencia.length === 7) { // YYYY-MM
+    competencia = `${competencia}-01`;
+  } else if (competencia.length > 10) {
+    competencia = competencia.split('T')[0];
+  }
+  
+  const valorServicos = Number(data.valor || 0).toFixed(2);
   const aliquota = (Number(data.aliquota) || 2.01).toFixed(2);
-  const valorIss = (Number(data.valor) * (Number(data.aliquota || 2.01) / 100)).toFixed(2);
+  const valorIss = (Number(data.valor || 0) * (Number(data.aliquota || 2.01) / 100)).toFixed(2);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <EnviarLoteRpsSincronoEnvio xmlns="http://www.abrasf.org.br/nfse.xsd">
@@ -169,10 +179,10 @@ function generateRpsXml(data: any, settings: any) {
 						</Valores>
 						<IssRetido>${data.issRetido || 2}</IssRetido>
 						${data.issRetido == 1 ? '<ResponsavelRetencao>1</ResponsavelRetencao>' : ''}
-						<ItemListaServico>${(data.itemLc116 || settings.itemLc116 || '1719').replace('.', '')}</ItemListaServico>
-						<CodigoCnae>${data.cnae || settings.cnae || '6920601'}</CodigoCnae>
-						<CodigoTributacaoMunicipio>${(data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio || '1719').replace('.', '')}</CodigoTributacaoMunicipio>
-						<Discriminacao>${escapeXml(data.descricao || '')}</Discriminacao>
+						<ItemListaServico>${(data.itemLc116 || settings.itemLc116 || '1719').replace(/\D/g, '')}</ItemListaServico>
+						<CodigoCnae>${(data.cnae || settings.cnae || '6920601').replace(/\D/g, '')}</CodigoCnae>
+						<CodigoTributacaoMunicipio>${(data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio || '292930').replace(/\D/g, '')}</CodigoTributacaoMunicipio>
+						<Discriminacao>${escapeXml(data.descricao || 'Prestacão de servicos.')}</Discriminacao>
 						<CodigoMunicipio>${settings.codigoMunicipio || '2929305'}</CodigoMunicipio>
 						<ExigibilidadeISS>1</ExigibilidadeISS>
 						<MunicipioIncidencia>${settings.codigoMunicipio || '2929305'}</MunicipioIncidencia>
@@ -184,25 +194,26 @@ function generateRpsXml(data: any, settings: any) {
 						<InscricaoMunicipal>${settings.prestadorIm || '3181602194'}</InscricaoMunicipal>
 					</Prestador>
 					<Tomador>
+						${cpfCnpjTag ? `
 						<IdentificacaoTomador>
 							<CpfCnpj>
 								${cpfCnpjTag}
 							</CpfCnpj>
-						</IdentificacaoTomador>
-						<RazaoSocial>${escapeXml(data.cliente || '')}</RazaoSocial>
+						</IdentificacaoTomador>` : ''}
+						${data.cliente ? `<RazaoSocial>${escapeXml(data.cliente)}</RazaoSocial>` : ''}
 						<Endereco>
-							<Endereco>${escapeXml(data.clienteEndereco || '')}</Endereco>
-							<Numero>${escapeXml(String(data.clienteNumero || ''))}</Numero>
+							<Endereco>${escapeXml(data.clienteEndereco || 'Nao Informado')}</Endereco>
+							<Numero>${escapeXml(String(data.clienteNumero || 'S/N'))}</Numero>
 							${data.clienteComplemento ? `<Complemento>${escapeXml(data.clienteComplemento)}</Complemento>` : ''}
-							<Bairro>${escapeXml(data.clienteBairro || '')}</Bairro>
+							<Bairro>${escapeXml(data.clienteBairro || 'Centro')}</Bairro>
 							<CodigoMunicipio>${data.clienteCodigoMunicipio || '2929305'}</CodigoMunicipio>
 							<Uf>${data.clienteUf || 'BA'}</Uf>
 							<CodigoPais>1058</CodigoPais>
-							<Cep>${(data.clienteCep || '').replace(/\D/g, '')}</Cep>
+							<Cep>${(data.clienteCep || '44330000').replace(/\D/g, '')}</Cep>
 						</Endereco>
 						<Contato>
-							<Telefone>${(data.clienteTelefone || '').replace(/\D/g, '')}</Telefone>
-							<Email>${data.clienteEmail || ''}</Email>
+							${data.clienteTelefone ? `<Telefone>${data.clienteTelefone.replace(/\D/g, '')}</Telefone>` : ''}
+							${data.clienteEmail ? `<Email>${data.clienteEmail}</Email>` : ''}
 						</Contato>
 					</Tomador>
 					<RegimeEspecialTributacao>${data.regimeEspecialTributacao || settings.regimeEspecialTributacao || 6}</RegimeEspecialTributacao>
@@ -524,8 +535,9 @@ app.post('/api/cobrancas', authenticate, async (req, res) => {
       
       let numeroNfse = null;
       let codigoVerificacao = null;
+      let soapResponse = '';
       try {
-        const soapResponse = await sendSoapRequest(
+        soapResponse = await sendSoapRequest(
           WEBSERVICE_URL,
           'http://nfse.abrasf.org.br/RecepcionarLoteRpsSincrono',
           signedXml,

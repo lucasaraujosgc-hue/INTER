@@ -540,7 +540,7 @@ function NewChargeModal({ onClose, onSuccess, token }: { onClose: () => void, on
     aliquota: 0,
     codigoTributacaoMunicipio: '',
     cnae: '',
-    competencia: new Date().toISOString().split('T')[0],
+    competencia: new Date().toISOString().slice(0, 7),
     issRetido: 2
   });
 
@@ -731,7 +731,7 @@ function NewChargeModal({ onClose, onSuccess, token }: { onClose: () => void, on
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Competência</label>
                 <input 
-                  type="date" 
+                  type="month" 
                   value={formData.competencia}
                   onChange={e => setFormData({...formData, competencia: e.target.value})}
                   className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full [color-scheme:dark]" 
