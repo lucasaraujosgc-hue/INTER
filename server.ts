@@ -454,7 +454,15 @@ app.post('/api/settings', authenticate, (req, res) => {
 app.get('/api/cobrancas', authenticate, (req, res) => {
   try {
     const cobrancas = JSON.parse(fs.readFileSync(cobrancasFile, 'utf-8'));
-    res.json(cobrancas);
+    let clients: any[] = [];
+    if (fs.existsSync(clientsFile)) {
+      clients = JSON.parse(fs.readFileSync(clientsFile, 'utf-8'));
+    }
+    const enriched = cobrancas.map((c: any) => {
+      const clientObj = clients.find(cl => cl.id === c.client || cl.name === c.clientName);
+      return { ...c, clientEmail: clientObj ? clientObj.email : '' };
+    });
+    res.json(enriched);
   } catch (error) {
     res.status(500).json({ error: 'Erro ao ler cobranças' });
   }
@@ -956,11 +964,14 @@ app.post('/api/send-email', authenticate, async (req, res) => {
 
     const transporter = nodemailer.createTransport({
       host: process.env.MAIL_SERVER || 'smtp.hostinger.com',
-      port: Number(process.env.MAIL_PORT) || 587,
-      secure: process.env.MAIL_USE_TLS === 'True' || process.env.MAIL_PORT === '465', 
+      port: Number(process.env.MAIL_PORT) || 465,
+      secure: process.env.MAIL_PORT ? process.env.MAIL_PORT === '465' : true, 
       auth: {
         user: process.env.MAIL_USERNAME,
         pass: process.env.MAIL_PASSWORD
+      },
+      tls: {
+        rejectUnauthorized: false
       }
     });
 

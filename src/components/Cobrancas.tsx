@@ -20,8 +20,10 @@ export default function Cobrancas({ token, refreshKey }: { token: string, refres
   }, [token, refreshKey]);
 
   const handleSendEmail = async (c: any) => {
-    const clientEmail = prompt('Digite o e-mail do cliente (ou deixe em branco para enviar um email de teste para contato@virgulacontabil.com.br):', '');
-    if (clientEmail === null) return; // Cancel
+    if (!c.clientEmail) {
+      alert('Este cliente não possui e-mail cadastrado. Atualize o cadastro do cliente antes de enviar.');
+      return;
+    }
     setSendingEmail(c.id);
     try {
       const emailRes = await fetch('/api/send-email', {
@@ -31,7 +33,7 @@ export default function Cobrancas({ token, refreshKey }: { token: string, refres
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          to: clientEmail || 'contato@virgulacontabil.com.br',
+          to: c.clientEmail,
           subject: `Cobrança - ${c.clientName || 'Cliente'} - Vírgula Contábil`,
           messageBody: `Olá ${c.clientName ? c.clientName.split(' ')[0] : ''},\n\nSegue em anexo a sua cobrança com vencimento para ${c.due.split('-').reverse().join('/')} no valor de R$ ${c.value.toLocaleString('pt-BR', {minimumFractionDigits:2})}.\n\nSe tiver qualquer dúvida, estamos à disposição.`,
           documents: [
