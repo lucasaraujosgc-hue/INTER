@@ -1,4 +1,4 @@
-FROM node:22-alpine
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
@@ -7,6 +7,9 @@ COPY package*.json ./
 
 # Instalar todas as dependências (incluindo devDependencies para o Vite e tsx)
 RUN npm install
+
+# Install Chromium natively for Debian
+RUN apt-get update && apt-get install -y chromium fonts-liberation libnss3 --no-install-recommends
 
 # Copiar o restante do código da aplicação
 COPY . .

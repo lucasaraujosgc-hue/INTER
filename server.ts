@@ -14,7 +14,6 @@ import cors from 'cors';
 import forge from 'node-forge';
 import nodemailer from 'nodemailer';
 import puppeteer from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
 
 const app = express();
 const PORT = 3000;
@@ -663,12 +662,10 @@ async function generateAndSaveNfsePdf(nfseId: string, cnpj: string, codigoVerifi
   const cleanCnpj = cnpj.replace(/\D/g, '');
   const url = `https://saogoncalodoscamposba.webiss.com.br/externo/nfse/visualizar/${cleanCnpj}/${codigoVerificacao}/${numeroNfse}`;
   
-  const executablePath = await chromium.executablePath();
   const browser = await puppeteer.launch({ 
-    args: chromium.args,
-    defaultViewport: chromium.defaultViewport,
-    executablePath: executablePath,
-    headless: chromium.headless
+    executablePath: '/usr/bin/chromium',
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
   });
   try {
     const page = await browser.newPage();
