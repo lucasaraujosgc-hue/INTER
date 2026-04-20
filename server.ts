@@ -406,6 +406,44 @@ app.post('/api/clients', authenticate, (req, res) => {
   }
 });
 
+app.put('/api/clients/:id', authenticate, (req, res) => {
+  try {
+    const { id } = req.params;
+    const clients = JSON.parse(fs.readFileSync(clientsFile, 'utf-8'));
+    const index = clients.findIndex((c: any) => c.id === id);
+    
+    if (index === -1) {
+      return res.status(404).json({ error: 'Cliente não encontrado' });
+    }
+
+    const updatedClient = {
+      ...clients[index],
+      ...req.body
+    };
+
+    clients[index] = updatedClient;
+    fs.writeFileSync(clientsFile, JSON.stringify(clients));
+    res.json({ success: true, client: updatedClient });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao atualizar cliente' });
+  }
+});
+
+app.get('/api/receitaws/:cnpj', authenticate, async (req, res) => {
+  try {
+    const { cnpj } = req.params;
+    const cleanCnpj = cnpj.replace(/\D/g, '');
+    const receitawsRes = await fetch(`https://receitaws.com.br/v1/cnpj/${cleanCnpj}`);
+    if (!receitawsRes.ok) {
+        return res.status(receitawsRes.status).json({ error: 'Erro na ReceitaWS' });
+    }
+    const data = await receitawsRes.json();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao consultar ReceitaWS' });
+  }
+});
+
 app.delete('/api/clients/:id', authenticate, (req, res) => {
   try {
     const { id } = req.params;

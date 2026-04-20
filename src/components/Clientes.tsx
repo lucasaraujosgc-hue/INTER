@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Loader2, MapPin, Phone, Mail, Trash2 } from 'lucide-react';
+import { Users, Plus, Loader2, MapPin, Phone, Mail, Trash2, Edit2, Search } from 'lucide-react';
 
 export default function Clientes({ token }: { token: string }) {
   const [clients, setClients] = useState<any[]>([]);
@@ -24,6 +24,8 @@ export default function Clientes({ token }: { token: string }) {
   };
 
   const [newClient, setNewClient] = useState(initialFormState);
+  const [editClientId, setEditClientId] = useState<string | null>(null);
+  const [searchingCnpj, setSearchingCnpj] = useState(false);
 
   useEffect(() => {
     fetchClients();
@@ -95,8 +97,11 @@ export default function Clientes({ token }: { token: string }) {
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await fetch('/api/clients', {
-        method: 'POST',
+      const url = editClientId ? `/api/clients/${editClientId}` : '/api/clients';
+      const method = editClientId ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
@@ -105,13 +110,75 @@ export default function Clientes({ token }: { token: string }) {
       });
       if (res.ok) {
         setNewClient(initialFormState);
+        setEditClientId(null);
         setShowForm(false);
         fetchClients();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Erro ao salvar cliente');
       }
     } catch (err) {
       console.error('Erro ao adicionar cliente', err);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleEdit = (client: any) => {
+    setNewClient({
+      cpfCnpj: client.cpfCnpj || client.cnpj || '',
+      inscricaoMunicipal: client.inscricaoMunicipal || '',
+      inscricaoEstadual: client.inscricaoEstadual || '',
+      name: client.name || '',
+      email: client.email || '',
+      telefone: client.telefone || '',
+      cep: client.cep || '',
+      municipioUf: client.municipioUf || '',
+      logradouro: client.logradouro || '',
+      bairro: client.bairro || '',
+      numero: client.numero || '',
+      complemento: client.complemento || ''
+    });
+    setEditClientId(client.id);
+    setShowForm(true);
+  };
+
+  const handleCnpjSearch = async () => {
+    const cnpj = newClient.cpfCnpj.replace(/\D/g, '');
+    if (cnpj.length !== 14) {
+      alert('CNPJ deve ter 14 dígitos para a busca automatizada.');
+      return;
+    }
+    
+    setSearchingCnpj(true);
+    try {
+      const res = await fetch(`/api/receitaws/${cnpj}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      
+      if (data.status === 'ERROR') {
+        alert('Erro ao buscar CNPJ: ' + (data.message || ''));
+        return;
+      }
+      
+      setNewClient(prev => ({
+        ...prev,
+        name: data.nome || data.fantasia || prev.name,
+        logradouro: data.logradouro || prev.logradouro,
+        numero: data.numero || prev.numero,
+        complemento: data.complemento || prev.complemento,
+        bairro: data.bairro || prev.bairro,
+        municipioUf: (data.municipio && data.uf) ? `${data.municipio}/${data.uf}` : prev.municipioUf,
+        cep: data.cep ? data.cep.replace(/\D/g, '') : prev.cep,
+        telefone: data.telefone || prev.telefone,
+        email: data.email || prev.email
+      }));
+    } catch (err) {
+      console.error('Erro na consulta do CNPJ', err);
+      alert('Erro de conexão ao consultar CNPJ');
+    } finally {
+      setSearchingCnpj(false);
     }
   };
 
@@ -122,7 +189,13 @@ export default function Clientes({ token }: { token: string }) {
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-lg font-bold text-brand-text">Gerenciamento de Clientes</h2>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => {
+            if (showForm) {
+              setNewClient(initialFormState);
+              setEditClientId(null);
+            }
+            setShowForm(!showForm);
+          }}
           className="bg-brand-green hover:bg-brand-green-dim text-black font-bold py-2 px-4 rounded-lg flex items-center gap-2 transition-colors"
         >
           <Plus size={16} />
@@ -135,14 +208,25 @@ export default function Clientes({ token }: { token: string }) {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
             <div>
               <label className="block text-xs font-semibold text-brand-muted uppercase tracking-wide mb-2">CPF/CNPJ *</label>
-              <input
-                type="text"
-                value={newClient.cpfCnpj}
-                onChange={e => setNewClient({ ...newClient, cpfCnpj: e.target.value })}
-                className="w-full bg-brand-surface2 border border-brand-border rounded-lg px-4 py-2.5 text-brand-text outline-none focus:border-brand-green transition-colors"
-                placeholder="Número do documento do tomador"
-                required
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newClient.cpfCnpj}
+                  onChange={e => setNewClient({ ...newClient, cpfCnpj: e.target.value })}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg px-4 py-2.5 text-brand-text outline-none focus:border-brand-green transition-colors"
+                  placeholder="Número do documento"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={handleCnpjSearch}
+                  disabled={searchingCnpj}
+                  className="bg-brand-surface2 border border-brand-border hover:border-brand-green hover:text-brand-green text-brand-text px-3 rounded-lg flex items-center justify-center transition-colors disabled:opacity-50"
+                  title="Buscar dados do CNPJ"
+                >
+                  {searchingCnpj ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
+                </button>
+              </div>
             </div>
             <div>
               <label className="block text-xs font-semibold text-brand-muted uppercase tracking-wide mb-2">Inscrição Municipal</label>
@@ -321,6 +405,13 @@ export default function Clientes({ token }: { token: string }) {
                     ) : '-'}
                   </td>
                   <td className="px-6 py-4 text-right">
+                    <button
+                      onClick={() => handleEdit(client)}
+                      className="p-2 text-brand-muted hover:text-brand-green hover:bg-brand-green/10 rounded-lg transition-colors mr-1"
+                      title="Editar cliente"
+                    >
+                      <Edit2 size={18} />
+                    </button>
                     <button
                       onClick={() => handleDelete(client.id)}
                       disabled={deletingId === client.id}
