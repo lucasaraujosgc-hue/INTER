@@ -96,7 +96,7 @@ function signNode(xml: string, xpath: string, keyPem: string, certPem: string): 
   (sig as any).keyInfoProvider = new CustomKeyInfo(certPem);
   
   sig.computeSignature(xml, {
-    location: { reference: xpath, action: "append" }
+    location: { reference: xpath, action: "after" }
   });
   
   return sig.getSignedXml();
@@ -211,10 +211,11 @@ function generateRpsXml(data: any, settings: any) {
 							<CodigoPais>1058</CodigoPais>
 							<Cep>${(data.clienteCep || '44330000').replace(/\D/g, '')}</Cep>
 						</Endereco>
+						${(data.clienteTelefone || data.clienteEmail) ? `
 						<Contato>
 							${data.clienteTelefone ? `<Telefone>${data.clienteTelefone.replace(/\D/g, '')}</Telefone>` : ''}
 							${data.clienteEmail ? `<Email>${data.clienteEmail}</Email>` : ''}
-						</Contato>
+						</Contato>` : ''}
 					</Tomador>
 					<RegimeEspecialTributacao>${data.regimeEspecialTributacao || settings.regimeEspecialTributacao || 6}</RegimeEspecialTributacao>
 					<OptanteSimplesNacional>${data.optanteSimplesNacional || settings.optanteSimplesNacional || 1}</OptanteSimplesNacional>
