@@ -124,7 +124,7 @@ function generateRpsXml(data: any, settings: any) {
   const cpfCnpjTag = isCpf ? `<Cpf>${tomadorCpfCnpj}</Cpf>` : `<Cnpj>${tomadorCpfCnpj}</Cnpj>`;
 
   // ABRASF 2.02 requires specific formats
-  const dataEmissao = new Date().toISOString().split('.')[0]; // YYYY-MM-DDTHH:MM:SS
+  const dataEmissao = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
   const competencia = data.competencia || new Date().toISOString().split('T')[0];
   const valorServicos = Number(data.valor).toFixed(2);
   const aliquota = (Number(data.aliquota) || 2.01).toFixed(2);
