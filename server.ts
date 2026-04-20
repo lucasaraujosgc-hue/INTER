@@ -13,6 +13,7 @@ import jwt from 'jsonwebtoken';
 import cors from 'cors';
 import forge from 'node-forge';
 import nodemailer from 'nodemailer';
+import puppeteer from 'puppeteer';
 
 const app = express();
 const PORT = 3000;
@@ -652,6 +653,66 @@ app.post('/api/cobrancas', authenticate, async (req, res) => {
   }
 });
 
+// --- PDF Generation Helper using Puppeteer ---
+async function generateAndSaveNfsePdf(nfseId: string, cnpj: string, codigoVerificacao: string, numeroNfse: string) {
+  const pdfPath = path.join(backupDir, `${nfseId}.pdf`);
+  if (fs.existsSync(pdfPath)) {
+    return pdfPath;
+  }
+  const cleanCnpj = cnpj.replace(/\D/g, '');
+  const url = `https://saogoncalodoscamposba.webiss.com.br/externo/nfse/visualizar/${cleanCnpj}/${codigoVerificacao}/${numeroNfse}`;
+  
+  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+  try {
+    const page = await browser.newPage();
+    await page.goto(url, { waitUntil: 'networkidle0', timeout: 15000 });
+    
+    // Hide buttons and alerts so they don't appear in the PDF
+    await page.evaluate(() => {
+      const style = document.createElement('style');
+      style.textContent = `
+        .hidden-print, .btn, hr.separator, #alertaMensagem { display: none !important; }
+        @media print { body { -webkit-print-color-adjust: exact; background: white; } }
+      `;
+      document.head.appendChild(style);
+    });
+    
+    const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
+    fs.writeFileSync(pdfPath, pdfBuffer);
+    return pdfPath;
+  } finally {
+    await browser.close();
+  }
+}
+
+app.get('/api/nfse/:id/pdf', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const nfseList = JSON.parse(fs.readFileSync(nfseFile, 'utf-8'));
+    const nfse = nfseList.find((n: any) => n.id === id);
+    
+    if (!nfse || !nfse.numero || !nfse.codigoVerificacao) {
+      return res.status(404).json({ error: 'NFS-e não encontrada ou ainda não emitida.' });
+    }
+
+    let settings: any = {};
+    if (fs.existsSync(settingsFile)) {
+      settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    }
+    const cnpj = settings.prestadorCnpj || '52613515000160';
+
+    const pdfPath = await generateAndSaveNfsePdf(nfse.id, cnpj, nfse.codigoVerificacao, nfse.numero);
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${nfse.id}.pdf"`);
+    const fileStream = fs.createReadStream(pdfPath);
+    fileStream.pipe(res);
+  } catch (error: any) {
+    console.error('Erro ao gerar/obter PDF:', error);
+    res.status(500).json({ error: 'Erro ao gerar ou obter o PDF da nota fiscal.', details: error.message });
+  }
+});
+
 app.get('/api/nfse', authenticate, (req, res) => {
   try {
     const nfse = JSON.parse(fs.readFileSync(nfseFile, 'utf-8'));
@@ -998,18 +1059,38 @@ app.post('/api/send-email', authenticate, async (req, res) => {
 
     const htmlContent = buildEmailHtml(messageBody, documents || [], emailSignature);
 
+    let settings: any = {};
+    if (fs.existsSync(settingsFile)) {
+      settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    }
+    const cnpj = settings.prestadorCnpj || '52613515000160';
+
     // Adiciona attachments se existirem XMLs/PDFs reais na cobrancaa
     const attachments: any[] = [];
     if (documents && documents.length > 0) {
-      documents.forEach((doc: any) => {
+      for (const doc of documents) {
         if (doc.contentStr) {
-          // If the client sends the XML content
           attachments.push({
             filename: `${doc.docName}.xml`,
             content: doc.contentStr
           });
         }
-      });
+        if (doc.nfseId) {
+          try {
+            const nfseList = JSON.parse(fs.readFileSync(nfseFile, 'utf-8'));
+            const nfse = nfseList.find((n: any) => n.id === doc.nfseId);
+            if (nfse && nfse.numero && nfse.codigoVerificacao) {
+              const pdfPath = await generateAndSaveNfsePdf(nfse.id, cnpj, nfse.codigoVerificacao, nfse.numero);
+              attachments.push({
+                filename: `NFS-e_${nfse.numero}.pdf`,
+                path: pdfPath
+              });
+            }
+          } catch(e) {
+            console.error('Erro ao anexar PDF da nfse:', e);
+          }
+        }
+      }
     }
 
     const mailOptions = {

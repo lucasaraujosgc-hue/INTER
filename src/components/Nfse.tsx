@@ -11,10 +11,15 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [sysSettings, setSysSettings] = useState<any>({});
   const ITEMS_PER_PAGE = 10;
 
   useEffect(() => {
     fetchNfse();
+    fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => setSysSettings(data))
+      .catch(console.error);
   }, [token, refreshKey]);
 
   const fetchNfse = () => {
@@ -170,6 +175,17 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex gap-2 justify-end">
+                        {n.numero && n.codigoVerificacao && (
+                          <a 
+                            href={`https://saogoncalodoscamposba.webiss.com.br/externo/nfse/visualizar/${(sysSettings?.prestadorCnpj || '52613515000160').replace(/\D/g, '')}/${n.codigoVerificacao}/${n.numero}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-center p-1.5 text-brand-dim hover:text-brand-green bg-brand-surface border border-brand-border rounded hover:bg-brand-surface2/50 transition-colors"
+                            title="Nota Oficial e PDF (WebISS)"
+                          >
+                            <span className="text-[10px] font-bold tracking-tight uppercase mr-1">PDF</span>
+                          </a>
+                        )}
                         <button 
                           onClick={() => {
                             if (!n.xml) {
@@ -179,7 +195,7 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
                             setViewingXml(n);
                           }}
                           className="text-brand-muted hover:text-brand-text transition-colors p-1"
-                          title="Visualizar XML"
+                          title="Visualizar XML e Log"
                         >
                           <Eye size={16} />
                         </button>

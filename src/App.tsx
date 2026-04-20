@@ -243,7 +243,8 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
           subject: `Cobrança - ${c.clientName || 'Cliente'} - Vírgula Contábil`,
           messageBody: `Olá ${c.clientName ? c.clientName.split(' ')[0] : ''},\n\nSegue em anexo a sua cobrança com vencimento para ${c.due.split('-').reverse().join('/')} no valor de R$ ${c.value.toLocaleString('pt-BR', {minimumFractionDigits:2})}.\n\nSe tiver qualquer dúvida, estamos à disposição.`,
           documents: [
-            { docName: `Boleto Bancário`, category: 'Boleto', dueDate: c.due, competence: c.due.substring(0, 7) }
+            { docName: `Boleto Bancário`, category: 'Boleto', dueDate: c.due, competence: c.due.substring(0, 7) },
+            ...(c.nfse ? [{ docName: `Nota Fiscal`, category: 'NFS-e', nfseId: c.nfse, dueDate: c.due, competence: c.due.substring(0, 7) }] : [])
           ]
         })
       });
