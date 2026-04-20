@@ -129,7 +129,7 @@ function generateRpsXml(data: any, settings: any) {
 							<Serie>1</Serie>
 							<Tipo>1</Tipo>
 						</IdentificacaoRps>
-						<DataEmissao>${new Date().toISOString().split('.')[0]}</DataEmissao>
+						<DataEmissao>${new Date().toISOString().split('T')[0]}</DataEmissao>
 						<Status>1</Status>
 					</Rps>
 					<Competencia>${data.competencia || new Date().toISOString().split('T')[0]}</Competencia>
@@ -208,8 +208,8 @@ async function sendSoapRequest(url: string, action: string, xmlBody: string, cer
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
     <RecepcionarLoteRpsSincronoRequest xmlns="http://nfse.abrasf.org.br">
-      <nfseCabecMsg><![CDATA[<cabecalho xmlns="http://www.abrasf.org.br/nfse.xsd" versao="2.02"><versaoDados>2.02</versaoDados></cabecalho>]]></nfseCabecMsg>
-      <nfseDadosMsg><![CDATA[${xmlBody}]]></nfseDadosMsg>
+      <nfseCabecMsg xmlns=""><![CDATA[<cabecalho xmlns="http://www.abrasf.org.br/nfse.xsd" versao="2.02"><versaoDados>2.02</versaoDados></cabecalho>]]></nfseCabecMsg>
+      <nfseDadosMsg xmlns=""><![CDATA[${xmlBody}]]></nfseDadosMsg>
     </RecepcionarLoteRpsSincronoRequest>
   </soap:Body>
 </soap:Envelope>`;
