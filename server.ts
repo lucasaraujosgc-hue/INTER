@@ -179,9 +179,9 @@ function generateRpsXml(data: any, settings: any) {
 						</Valores>
 						<IssRetido>${data.issRetido || 2}</IssRetido>
 						${data.issRetido == 1 ? '<ResponsavelRetencao>1</ResponsavelRetencao>' : ''}
-						<ItemListaServico>${(data.itemLc116 || settings.itemLc116 || '1719').replace(/\D/g, '')}</ItemListaServico>
-						<CodigoCnae>${(data.cnae || settings.cnae || '6920601').replace(/\D/g, '')}</CodigoCnae>
-						<CodigoTributacaoMunicipio>${(data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio || '292930').replace(/\D/g, '')}</CodigoTributacaoMunicipio>
+						<ItemListaServico>${(data.itemLc116 || settings.itemLc116 || '').replace(/[^\d.]/g, '') || '1719'}</ItemListaServico>
+						${(data.cnae || settings.cnae) ? `<CodigoCnae>${String(data.cnae || settings.cnae).replace(/[^\d]/g, '')}</CodigoCnae>` : ''}
+						${(data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio) ? `<CodigoTributacaoMunicipio>${String(data.codigoTributacaoMunicipio || settings.codigoTributacaoMunicipio).replace(/[^\d.-]/g, '')}</CodigoTributacaoMunicipio>` : ''}
 						<Discriminacao>${escapeXml(data.descricao || 'Prestacão de servicos.')}</Discriminacao>
 						<CodigoMunicipio>${settings.codigoMunicipio || '2929305'}</CodigoMunicipio>
 						<ExigibilidadeISS>1</ExigibilidadeISS>
@@ -716,7 +716,7 @@ app.post('/api/nfse/emitir', authenticate, async (req, res) => {
         if (errorMessages.length > 0) {
           return res.status(400).json({
             error: 'Erro retornado pela Prefeitura: ' + errorMessages.join(' | '),
-            xmlPreview: signedXml,
+            xmlPreview: innerXmlString + '\n\n\n--- XML ENVIADO ---\n\n\n' + signedXml,
             responseXml: innerXmlString
           });
         }
@@ -754,7 +754,14 @@ app.post('/api/nfse/emitir', authenticate, async (req, res) => {
 
     } catch (soapError: any) {
       console.error('Erro ao enviar SOAP:', soapError.message);
-      return res.status(500).json({ error: soapError.message, xmlPreview: signedXml });
+      let errorMsg = soapError.message;
+      let fullXml = signedXml;
+      
+      // If the error message comes from the specific xml response we parsed but considered an error, show it
+      if (soapError.message.includes('A prefeitura retornou erros na validação')) {
+        fullXml = soapError.fullResponse || signedXml;
+      }
+      return res.status(400).json({ error: errorMsg, xmlPreview: fullXml });
     }
   } catch (error: any) {
     console.error('Erro ao emitir NFS-e:', error);

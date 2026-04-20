@@ -630,8 +630,8 @@ function NewChargeModal({ onClose, onSuccess, token }: { onClose: () => void, on
               </div>
               {xmlPreview && (
                 <div className="mt-2">
-                  <div className="text-[11px] text-brand-muted mb-1">XML do RPS Gerado (Pré-visualização):</div>
-                  <pre className="bg-black/50 p-3 rounded border border-brand-border text-[10px] text-brand-dim overflow-x-auto">
+                  <div className="text-[11px] text-brand-muted mb-1">Conteúdo XML Retornado/Gerado:</div>
+                  <pre className="bg-black/50 p-3 rounded border border-brand-border text-[10px] text-brand-dim overflow-x-auto whitespace-pre-wrap">
                     {xmlPreview}
                   </pre>
                 </div>
