@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Receipt, Loader2, Search, Eye, Download, Plus, X, AlertCircle } from 'lucide-react';
+import { Receipt, Loader2, Search, Eye, Download, Plus, X, AlertCircle, Copy } from 'lucide-react';
 
 export default function Nfse({ token, refreshKey, setRefreshKey }: { token: string, refreshKey?: number, setRefreshKey?: (k: (prev: number) => number) => void }) {
   const [nfses, setNfses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [duplicateData, setDuplicateData] = useState<any>(null);
   const [viewingXml, setViewingXml] = useState<any | null>(null);
 
   const [search, setSearch] = useState('');
@@ -114,7 +115,7 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-lg font-bold text-brand-text">Notas Fiscais de Serviço (NFS-e)</h2>
-        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-1.5 px-4 py-2 bg-brand-green hover:bg-brand-green-dim text-black rounded-lg text-[13px] font-semibold transition-colors cursor-pointer">
+        <button onClick={() => { setDuplicateData(null); setIsModalOpen(true); }} className="flex items-center gap-1.5 px-4 py-2 bg-brand-green hover:bg-brand-green-dim text-black rounded-lg text-[13px] font-semibold transition-colors cursor-pointer">
           <Plus size={16} strokeWidth={2.5} />
           Emitir NFS-e
         </button>
@@ -205,6 +206,13 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
                           </button>
                         )}
                         <button 
+                          onClick={() => { setDuplicateData(n); setIsModalOpen(true); }}
+                          className="text-brand-muted hover:text-brand-green transition-colors p-1"
+                          title="Duplicar NFS-e"
+                        >
+                          <Copy size={16} />
+                        </button>
+                        <button 
                           onClick={() => {
                             if (!n.xml) {
                               alert('Erro: sem dados para exibir.');
@@ -264,7 +272,7 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
           </div>
         )}
       </div>
-      {isModalOpen && <NewNfseModal onClose={() => setIsModalOpen(false)} onSuccess={handleSuccess} token={token} />}
+      {isModalOpen && <NewNfseModal onClose={() => setIsModalOpen(false)} onSuccess={handleSuccess} token={token} initialData={duplicateData} />}
       
       {viewingXml && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -314,25 +322,38 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
   );
 }
 
-function NewNfseModal({ onClose, onSuccess, token }: { onClose: () => void, onSuccess: () => void, token: string }) {
+function NewNfseModal({ onClose, onSuccess, token, initialData }: { onClose: () => void, onSuccess: () => void, token: string, initialData?: any }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [clients, setClients] = useState<any[]>([]);
 
+  // Tenta extrair a descrição e outros dados do XML caso estejam salvos
+  let initialDesc = '';
+  let initialCompetencia = '';
+  if (initialData?.xml) {
+    const descMatch = initialData.xml.match(/<Discriminacao>(.*?)<\/Discriminacao>/);
+    if (descMatch) initialDesc = descMatch[1];
+    
+    const compMatch = initialData.xml.match(/<Competencia>(.*?)<\/Competencia>/);
+    if (compMatch && compMatch[1].length >= 7) {
+      initialCompetencia = compMatch[1].substring(0, 7); // yyyy-mm
+    }
+  }
+
   const [formData, setFormData] = useState({
-    cliente: '',
-    valor: 300,
-    descricao: 'Prestação de serviços contábeis, compreendendo escrituração contábil e fiscal, apuração de tributos, elaboração e entrega de obrigações acessórias, assessoria e consultoria contábil, referente ao período de xx/202x.',
-    itemLc116: '1719',
-    aliquota: 2.01,
-    codigoTributacaoMunicipio: '1719',
-    cnae: '6920601',
-    competencia: new Date().toISOString().slice(0, 7), // YYYY-MM
-    issRetido: 2,
-    regimeEspecialTributacao: 6,
-    optanteSimplesNacional: 1,
-    incentivoFiscal: 2
+    cliente: initialData?.clientName || '',
+    valor: initialData?.value || 300,
+    descricao: initialDesc || initialData?.descricao || 'Prestação de serviços contábeis, compreendendo escrituração contábil e fiscal, apuração de tributos, elaboração e entrega de obrigações acessórias, assessoria e consultoria contábil, referente ao período de xx/202x.',
+    itemLc116: initialData?.itemLc116 || '1719',
+    aliquota: initialData?.aliquota || 2.01,
+    codigoTributacaoMunicipio: initialData?.codigoTributacaoMunicipio || '1719',
+    cnae: initialData?.cnae || '6920601',
+    competencia: initialCompetencia || initialData?.competencia || new Date().toISOString().slice(0, 7), // YYYY-MM
+    issRetido: initialData?.issRetido || 2,
+    regimeEspecialTributacao: initialData?.regimeEspecialTributacao || 6,
+    optanteSimplesNacional: initialData?.optanteSimplesNacional || 1,
+    incentivoFiscal: initialData?.incentivoFiscal || 2
   });
 
   useEffect(() => {
@@ -341,19 +362,21 @@ function NewNfseModal({ onClose, onSuccess, token }: { onClose: () => void, onSu
       .then(data => setClients(data))
       .catch(console.error);
 
-    fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
-      .then(data => {
-        setFormData(prev => ({
-          ...prev,
-          itemLc116: data.itemLc116 || '1719',
-          aliquota: data.aliquota || 2.01,
-          codigoTributacaoMunicipio: data.codigoTributacaoMunicipio || '1719',
-          cnae: data.cnae || '6920601'
-        }));
-      })
-      .catch(console.error);
-  }, [token]);
+    if (!initialData) {
+      fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
+        .then(res => res.json())
+        .then(data => {
+          setFormData(prev => ({
+            ...prev,
+            itemLc116: data.itemLc116 || '1719',
+            aliquota: data.aliquota || 2.01,
+            codigoTributacaoMunicipio: data.codigoTributacaoMunicipio || '1719',
+            cnae: data.cnae || '6920601'
+          }));
+        })
+        .catch(console.error);
+    }
+  }, [token, initialData]);
 
   const handleSave = async () => {
     if (!formData.cliente) {
