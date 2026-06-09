@@ -11,6 +11,8 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const [showClientFilter, setShowClientFilter] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [sysSettings, setSysSettings] = useState<any>({});
   const ITEMS_PER_PAGE = 10;
@@ -105,8 +107,17 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
     let inRange = true;
     if (startDate) inRange = inRange && d >= new Date(startDate);
     if (endDate) inRange = inRange && d <= new Date(endDate);
-    return matchesSearch && inRange;
+    
+    let matchesClients = true;
+    if (selectedClients.length > 0) {
+      matchesClients = selectedClients.includes(n.clientName);
+    }
+    
+    return matchesSearch && inRange && matchesClients;
   });
+
+  const uniqueClients = Array.from(new Set(nfses.map(n => n.clientName).filter(Boolean))) as string[];
+  const totalValue = filteredNfses.reduce((acc, n) => acc + (Number(n.value) || 0), 0);
 
   const totalPages = Math.ceil(filteredNfses.length / ITEMS_PER_PAGE);
   const paginatedNfses = filteredNfses.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -134,6 +145,54 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
             />
           </div>
           <div className="flex gap-2">
+            <div className="relative">
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Empresas</label>
+                <div 
+                  onClick={() => setShowClientFilter(!showClientFilter)}
+                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none hover:border-brand-green transition-colors text-[13px] cursor-pointer min-w-[150px] flex justify-between items-center"
+                >
+                  <span className="truncate max-w-[120px]">
+                    {selectedClients.length === 0 ? 'Todas' : `${selectedClients.length} selecionada(s)`}
+                  </span>
+                </div>
+              </div>
+              
+              {showClientFilter && (
+                <div className="absolute top-full right-0 mt-1 w-64 bg-brand-surface2 border border-brand-border rounded-lg shadow-xl z-10 max-h-60 overflow-y-auto">
+                  <div className="p-2 flex flex-col gap-1">
+                    <label className="flex items-center gap-2 p-2 hover:bg-brand-surface cursor-pointer rounded">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedClients.length === 0}
+                        onChange={() => setSelectedClients([])}
+                        className="accent-brand-green w-4 h-4"
+                      />
+                      <span className="text-sm text-brand-text truncate">Todas as empresas</span>
+                    </label>
+                    <div className="w-full h-px bg-brand-border my-1"></div>
+                    {uniqueClients.map(client => (
+                      <label key={client} className="flex items-center gap-2 p-2 hover:bg-brand-surface cursor-pointer rounded">
+                        <input 
+                          type="checkbox" 
+                          checked={selectedClients.includes(client)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedClients(prev => [...prev, client]);
+                            } else {
+                              setSelectedClients(prev => prev.filter(c => c !== client));
+                            }
+                          }}
+                          className="accent-brand-green w-4 h-4 shrink-0"
+                        />
+                        <span className="text-sm text-brand-text truncate" title={client}>{client}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex flex-col gap-1">
               <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Data Inicial</label>
               <input 
@@ -247,31 +306,45 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
             </tbody>
           </table>
         </div>
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="p-4 border-t border-brand-border flex items-center justify-between">
-            <div className="text-[12px] text-brand-muted">
-              Mostrando <span className="font-medium text-brand-text">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> ao <span className="font-medium text-brand-text">{Math.min(currentPage * ITEMS_PER_PAGE, filteredNfses.length)}</span> de <span className="font-medium text-brand-text">{filteredNfses.length}</span> resultados
+          {/* Pagination */}
+          <div className="p-4 flex items-center justify-between border-t border-brand-border bg-brand-surface2/30">
+            <div className="flex gap-4 items-center">
+              <div className="text-[12px] text-brand-muted">
+                {totalPages > 1 && (
+                  <span>
+                    Mostrando <span className="font-medium text-brand-text">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> ao <span className="font-medium text-brand-text">{Math.min(currentPage * ITEMS_PER_PAGE, filteredNfses.length)}</span> de <span className="font-medium text-brand-text">{filteredNfses.length}</span> resultados
+                  </span>
+                )}
+                {totalPages <= 1 && (
+                  <span><span className="font-medium text-brand-text">{filteredNfses.length}</span> resultado(s)</span>
+                )}
+              </div>
+              <div className="h-4 w-px bg-brand-border hidden sm:block"></div>
+              <div className="text-[13px] font-medium text-brand-text bg-brand-green/10 px-3 py-1 rounded-full text-brand-green border border-brand-green/20">
+                Total Acumulado: R$ {totalValue.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+              </div>
             </div>
-            <div className="flex gap-1">
-              <button 
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                className="px-3 py-1.5 rounded-md bg-brand-surface2 border border-brand-border text-brand-text text-[12px] disabled:opacity-50 hover:bg-brand-surface3 transition-colors"
-              >
-                Anterior
-              </button>
-              <button 
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                className="px-3 py-1.5 rounded-md bg-brand-surface2 border border-brand-border text-brand-text text-[12px] disabled:opacity-50 hover:bg-brand-surface3 transition-colors"
-              >
-                Próxima
-              </button>
-            </div>
+
+            {totalPages > 1 && (
+              <div className="flex gap-1">
+                <button 
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  className="px-3 py-1.5 rounded-md bg-brand-surface2 border border-brand-border text-brand-text text-[12px] disabled:opacity-50 hover:bg-brand-surface3 transition-colors"
+                >
+                  Anterior
+                </button>
+                <button 
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  className="px-3 py-1.5 rounded-md bg-brand-surface2 border border-brand-border text-brand-text text-[12px] disabled:opacity-50 hover:bg-brand-surface3 transition-colors"
+                >
+                  Próxima
+                </button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
       {isModalOpen && <NewNfseModal onClose={() => setIsModalOpen(false)} onSuccess={handleSuccess} token={token} initialData={duplicateData} />}
       
       {viewingXml && (
