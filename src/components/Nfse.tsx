@@ -5,6 +5,7 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
   const [nfses, setNfses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [duplicateData, setDuplicateData] = useState<any>(null);
   const [viewingXml, setViewingXml] = useState<any | null>(null);
 
@@ -126,10 +127,16 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-lg font-bold text-brand-text">Notas Fiscais de Serviço (NFS-e)</h2>
-        <button onClick={() => { setDuplicateData(null); setIsModalOpen(true); }} className="flex items-center gap-1.5 px-4 py-2 bg-brand-green hover:bg-brand-green-dim text-black rounded-lg text-[13px] font-semibold transition-colors cursor-pointer">
-          <Plus size={16} strokeWidth={2.5} />
-          Emitir NFS-e
-        </button>
+        <div className="flex gap-3">
+          <button onClick={() => setIsBatchModalOpen(true)} className="flex items-center gap-1.5 px-4 py-2 bg-brand-surface2 border border-brand-green hover:bg-brand-green/10 text-brand-green rounded-lg text-[13px] font-semibold transition-colors cursor-pointer">
+            <Plus size={16} strokeWidth={2.5} />
+            Emitir NFS-e em Lote
+          </button>
+          <button onClick={() => { setDuplicateData(null); setIsModalOpen(true); }} className="flex items-center gap-1.5 px-4 py-2 bg-brand-green hover:bg-brand-green-dim text-black rounded-lg text-[13px] font-semibold transition-colors cursor-pointer">
+            <Plus size={16} strokeWidth={2.5} />
+            Emitir NFS-e
+          </button>
+        </div>
       </div>
 
       <div className="bg-brand-surface border border-brand-border rounded-xl overflow-hidden flex flex-col min-h-[500px]">
@@ -346,6 +353,7 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
           </div>
         </div>
       {isModalOpen && <NewNfseModal onClose={() => setIsModalOpen(false)} onSuccess={handleSuccess} token={token} initialData={duplicateData} />}
+      {isBatchModalOpen && <BatchNfseModal onClose={() => setIsBatchModalOpen(false)} onSuccess={handleSuccess} token={token} />}
       
       {viewingXml && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -679,6 +687,351 @@ function NewNfseModal({ onClose, onSuccess, token, initialData }: { onClose: () 
             {loading ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} strokeWidth={2.5} />}
             Emitir NFS-e
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BatchNfseModal({ onClose, onSuccess, token }: { onClose: () => void, onSuccess: () => void, token: string }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [clients, setClients] = useState<any[]>([]);
+  const [progress, setProgress] = useState(0);
+
+  const [formData, setFormData] = useState({
+    descricao: 'Prestação de serviços contábeis, compreendendo escrituração contábil e fiscal, apuração de tributos, elaboração e entrega de obrigações acessórias, assessoria e consultoria contábil, referente ao período de xx/202x.',
+    itemLc116: '1719',
+    aliquota: 2.01,
+    codigoTributacaoMunicipio: '1719',
+    cnae: '6920601',
+    competencia: new Date().toISOString().slice(0, 7), // YYYY-MM
+    issRetido: 2,
+    regimeEspecialTributacao: 6,
+    optanteSimplesNacional: 1,
+    incentivoFiscal: 2
+  });
+
+  const [selectedClients, setSelectedClients] = useState<{[key: string]: boolean}>({});
+  const [clientValues, setClientValues] = useState<{[key: string]: number}>({});
+
+  useEffect(() => {
+    fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => {
+        setClients(data);
+        const sc: any = {};
+        const cv: any = {};
+        data.forEach((c: any) => {
+          sc[c.id] = false;
+          cv[c.id] = 300;
+        });
+        setSelectedClients(sc);
+        setClientValues(cv);
+      })
+      .catch(console.error);
+
+    fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => {
+        setFormData(prev => ({
+          ...prev,
+          itemLc116: data.itemLc116 || '1719',
+          aliquota: data.aliquota || 2.01,
+          codigoTributacaoMunicipio: data.codigoTributacaoMunicipio || '1719',
+          cnae: data.cnae || '6920601'
+        }));
+      })
+      .catch(console.error);
+  }, [token]);
+
+  const handleSave = async () => {
+    const clientsToEmit = clients.filter(c => selectedClients[c.id]);
+    if (clientsToEmit.length === 0) {
+      setError('Selecione ao menos um cliente');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    setProgress(0);
+
+    let successes = 0;
+    let failures = 0;
+
+    for (let i = 0; i < clientsToEmit.length; i++) {
+      const c = clientsToEmit[i];
+      try {
+        const res = await fetch('/api/nfse/emitir', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            ...formData,
+            cliente: c.id,
+            valor: clientValues[c.id] || 0
+          })
+        });
+        if (res.ok) {
+          successes++;
+        } else {
+          failures++;
+        }
+      } catch (err: any) {
+        failures++;
+      }
+      setProgress(Math.round(((i + 1) / clientsToEmit.length) * 100));
+    }
+
+    if (failures === 0) {
+      setSuccess(`Lote emitido com sucesso! (${successes} notas)`);
+    } else {
+      setError(`Emissão finalizada: ${successes} com sucesso, ${failures} falhas.`);
+    }
+
+    onSuccess();
+    setTimeout(() => {
+      onClose();
+    }, 3000);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-brand-surface w-full max-w-4xl rounded-2xl shadow-2xl border border-brand-border flex flex-col max-h-[90vh]">
+        <div className="p-4 px-6 border-b border-brand-border flex justify-between items-center shrink-0">
+          <h2 className="text-base font-bold text-brand-text flex items-center gap-2">
+            <Plus size={18} className="text-brand-green" /> Emitir NFS-e em Lote
+          </h2>
+          <button onClick={onClose} className="text-brand-muted hover:text-brand-text transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
+          {error && (
+            <div className="mb-6 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-[13px] flex items-center gap-2">
+              <AlertCircle size={16} /> {error}
+            </div>
+          )}
+          {success && (
+            <div className="mb-6 p-3 bg-brand-green/10 border border-brand-green/20 text-brand-green rounded-lg text-[13px] flex items-center gap-2">
+              <AlertCircle size={16} /> {success}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="flex flex-col gap-5">
+              <h3 className="text-sm font-bold text-brand-text border-b border-brand-border pb-2">Configurações Gerais</h3>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Item LC 116</label>
+                  <input 
+                    type="text" 
+                    value={formData.itemLc116}
+                    onChange={e => setFormData({...formData, itemLc116: e.target.value})}
+                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Alíquota (%)</label>
+                  <input 
+                    type="number" 
+                    step="0.01"
+                    value={formData.aliquota}
+                    onChange={e => setFormData({...formData, aliquota: Number(e.target.value)})}
+                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Código Tributação</label>
+                  <input 
+                    type="text" 
+                    value={formData.codigoTributacaoMunicipio}
+                    onChange={e => setFormData({...formData, codigoTributacaoMunicipio: e.target.value})}
+                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">CNAE</label>
+                  <input 
+                    type="text" 
+                    value={formData.cnae}
+                    onChange={e => setFormData({...formData, cnae: e.target.value})}
+                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Competência</label>
+                  <input 
+                    type="month" 
+                    value={formData.competencia}
+                    onChange={e => setFormData({...formData, competencia: e.target.value})}
+                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">ISS Retido</label>
+                  <select 
+                    value={formData.issRetido}
+                    onChange={e => setFormData({...formData, issRetido: Number(e.target.value)})}
+                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                  >
+                    <option value={1}>Sim (1)</option>
+                    <option value={2}>Não (2)</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Regime Especial Trib.</label>
+                  <select 
+                    value={formData.regimeEspecialTributacao}
+                    onChange={e => setFormData({...formData, regimeEspecialTributacao: Number(e.target.value)})}
+                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                  >
+                    <option value={1}>1 - Microempresa Municipal</option>
+                    <option value={2}>2 - Estimativa</option>
+                    <option value={3}>3 - Sociedade de Profissionais</option>
+                    <option value={4}>4 - Cooperativa</option>
+                    <option value={5}>5 - MEI</option>
+                    <option value={6}>6 - ME ou EPP do Simples Nacional</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Optante Simples Nac.</label>
+                  <select 
+                    value={formData.optanteSimplesNacional}
+                    onChange={e => setFormData({...formData, optanteSimplesNacional: Number(e.target.value)})}
+                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                  >
+                    <option value={1}>Sim (1)</option>
+                    <option value={2}>Não (2)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Incentivo Fiscal</label>
+                <select 
+                  value={formData.incentivoFiscal}
+                  onChange={e => setFormData({...formData, incentivoFiscal: Number(e.target.value)})}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                >
+                  <option value={1}>Sim (1)</option>
+                  <option value={2}>Não (2)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Descrição do Serviço (Geral)</label>
+                <textarea 
+                  value={formData.descricao}
+                  onChange={e => setFormData({...formData, descricao: e.target.value})}
+                  rows={3}
+                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col h-[500px]">
+              <h3 className="text-sm font-bold text-brand-text border-b border-brand-border pb-2 mb-4">Empresas e Valores</h3>
+              
+              <div className="flex items-center justify-between mb-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="checkbox"
+                    className="accent-brand-green w-4 h-4"
+                    checked={clients.length > 0 && clients.every(c => selectedClients[c.id])}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      const sc: any = {};
+                      clients.forEach(c => sc[c.id] = checked);
+                      setSelectedClients(sc);
+                    }}
+                  />
+                  <span className="text-[13px] font-medium text-brand-text">Selecionar Todas</span>
+                </label>
+                <span className="text-[12px] text-brand-muted bg-brand-surface2 px-2 py-1 rounded-lg">
+                  {Object.values(selectedClients).filter(Boolean).length} selecionadas
+                </span>
+              </div>
+
+              <div className="flex-1 overflow-y-auto bg-brand-surface2/30 border border-brand-border rounded-lg p-2 custom-scrollbar">
+                {clients.map(client => (
+                  <div key={client.id} className="flex items-center gap-3 p-2 hover:bg-brand-surface2 rounded-lg transition-colors border-b border-brand-border/50 last:border-0">
+                    <input 
+                      type="checkbox"
+                      className="accent-brand-green w-4 h-4 shrink-0 mt-2"
+                      checked={selectedClients[client.id] || false}
+                      onChange={(e) => setSelectedClients({...selectedClients, [client.id]: e.target.checked})}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-medium text-brand-text truncate" title={client.name}>{client.name}</div>
+                      <div className="text-[11px] text-brand-muted font-mono">{client.cpfCnpj || client.cnpj}</div>
+                    </div>
+                    <div className="w-28 shrink-0">
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-brand-muted">R$</span>
+                        <input 
+                          type="number"
+                          value={clientValues[client.id] || 0}
+                          onChange={(e) => setClientValues({...clientValues, [client.id]: Number(e.target.value)})}
+                          className="w-full bg-brand-surface border border-brand-border rounded py-1 pl-6 pr-2 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
+                          disabled={!selectedClients[client.id]}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {clients.length === 0 && (
+                  <div className="p-4 text-center text-brand-muted text-[13px]">
+                    Nenhum cliente cadastrado.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 px-6 border-t border-brand-border bg-brand-surface2/50 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
+          <div className="w-full sm:w-1/2">
+            {loading && (
+              <div className="flex flex-col gap-1 w-full">
+                <div className="flex justify-between text-[11px] text-brand-muted font-semibold uppercase tracking-wide">
+                  <span>Progresso</span>
+                  <span>{progress}%</span>
+                </div>
+                <div className="w-full h-2 bg-brand-surface border border-brand-border rounded-full overflow-hidden">
+                  <div className="h-full bg-brand-green transition-all duration-300" style={{ width: `${progress}%` }}></div>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-3 w-full sm:w-auto">
+            <button onClick={onClose} disabled={loading} className="px-4 py-2 text-[13px] font-semibold text-brand-muted hover:text-brand-text transition-colors disabled:opacity-50">
+              Cancelar
+            </button>
+            <button 
+              onClick={handleSave}
+              disabled={loading || Object.values(selectedClients).filter(Boolean).length === 0}
+              className="flex items-center gap-2 px-5 py-2 bg-brand-green hover:bg-brand-green-dim text-black rounded-lg text-[13px] font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} strokeWidth={2.5} />}
+              Emitir Lote
+            </button>
+          </div>
         </div>
       </div>
     </div>
