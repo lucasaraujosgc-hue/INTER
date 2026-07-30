@@ -12,6 +12,8 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [emissaoStart, setEmissaoStart] = useState('');
+  const [emissaoEnd, setEmissaoEnd] = useState('');
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [showClientFilter, setShowClientFilter] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -104,17 +106,32 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
 
   const filteredNfses = nfses.filter(n => {
     const matchesSearch = n.clientName?.toLowerCase().includes(search.toLowerCase()) || n.id?.toLowerCase().includes(search.toLowerCase());
-    const d = new Date(n.issueDate);
+    
+    let comp = '';
+    if (n.xml) {
+      const match = n.xml.match(/<Competencia>(.*?)<\/Competencia>/);
+      if (match && match[1].length >= 7) {
+        comp = match[1].substring(0, 7); // yyyy-mm
+      }
+    }
+    if (!comp && n.issueDate) {
+      comp = n.issueDate.substring(0, 7);
+    }
+
     let inRange = true;
-    if (startDate) inRange = inRange && d >= new Date(startDate);
-    if (endDate) inRange = inRange && d <= new Date(endDate);
+    if (startDate && comp < startDate) inRange = false;
+    if (endDate && comp > endDate) inRange = false;
+
+    let inIssueDateRange = true;
+    if (emissaoStart && n.issueDate < emissaoStart) inIssueDateRange = false;
+    if (emissaoEnd && n.issueDate > emissaoEnd) inIssueDateRange = false;
     
     let matchesClients = true;
     if (selectedClients.length > 0) {
       matchesClients = selectedClients.includes(n.clientName);
     }
     
-    return matchesSearch && inRange && matchesClients;
+    return matchesSearch && inRange && inIssueDateRange && matchesClients;
   });
 
   const uniqueClients = Array.from(new Set(nfses.map(n => n.clientName).filter(Boolean))) as string[];
@@ -201,20 +218,39 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Data Inicial</label>
+              <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Competência Inicial</label>
               <input 
-                type="date" 
+                type="month" 
                 value={startDate}
                 onChange={e => setStartDate(e.target.value)}
                 className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none focus:border-brand-green transition-colors text-[13px]"
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Data Final</label>
+              <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Competência Final</label>
               <input 
-                type="date" 
+                type="month" 
                 value={endDate}
                 onChange={e => setEndDate(e.target.value)}
+                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none focus:border-brand-green transition-colors text-[13px]"
+              />
+            </div>
+            
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Emissão Inicial</label>
+              <input 
+                type="date" 
+                value={emissaoStart}
+                onChange={e => setEmissaoStart(e.target.value)}
+                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none focus:border-brand-green transition-colors text-[13px]"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Emissão Final</label>
+              <input 
+                type="date" 
+                value={emissaoEnd}
+                onChange={e => setEmissaoEnd(e.target.value)}
                 className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none focus:border-brand-green transition-colors text-[13px]"
               />
             </div>
@@ -227,6 +263,7 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
                 <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Número</th>
                 <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Cliente</th>
                 <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Valor</th>
+                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Competência</th>
                 <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Emissão</th>
                 <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Status</th>
                 <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2 text-right">Ações</th>
@@ -235,17 +272,31 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
             <tbody>
               {paginatedNfses.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-brand-muted">
+                  <td colSpan={7} className="px-6 py-8 text-center text-brand-muted">
                     <Receipt size={48} className="mx-auto mb-4 opacity-20" />
                     <p>Nenhuma NFS-e encontrada.</p>
                   </td>
                 </tr>
               ) : (
-                paginatedNfses.map(n => (
+                paginatedNfses.map(n => {
+                  let comp = '';
+                  if (n.xml) {
+                    const match = n.xml.match(/<Competencia>(.*?)<\/Competencia>/);
+                    if (match && match[1].length >= 7) {
+                      comp = match[1].substring(0, 7);
+                    }
+                  }
+                  if (!comp && n.issueDate) {
+                    comp = n.issueDate.substring(0, 7);
+                  }
+                  const compFormatted = comp.split('-').reverse().join('/');
+
+                  return (
                   <tr key={n.id} className="border-b border-white/5 last:border-0 hover:bg-brand-surface2 transition-colors">
                     <td className="px-6 py-4 text-brand-muted font-mono text-sm">{n.numero || n.id}</td>
                     <td className="px-6 py-4 font-medium text-brand-text">{n.clientName}</td>
                     <td className="px-6 py-4 font-mono text-sm">R$ {n.value.toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+                    <td className="px-6 py-4 text-brand-text font-medium text-sm">{compFormatted}</td>
                     <td className="px-6 py-4 text-brand-muted text-sm">{n.issueDate.split('-').reverse().join('/')}</td>
                     <td className="px-6 py-4">
                       {n.status === 'issued' ? (
@@ -308,7 +359,8 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
                       </div>
                     </td>
                   </tr>
-                ))
+                );
+                })
               )}
             </tbody>
           </table>
