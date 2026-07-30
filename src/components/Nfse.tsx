@@ -885,6 +885,11 @@ function BatchNfseModal({ onClose, onSuccess, token }: { onClose: () => void, on
         failures++;
       }
       setProgress(Math.round(((i + 1) / clientsToEmit.length) * 100));
+      
+      // Atraso de 2,5 segundos para evitar bloqueio por excesso de requisições no WebService
+      if (i < clientsToEmit.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 2500));
+      }
     }
 
     if (failures === 0) {
