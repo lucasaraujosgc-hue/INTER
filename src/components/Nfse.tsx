@@ -767,8 +767,14 @@ function BatchNfseModal({ onClose, onSuccess, token }: { onClose: () => void, on
 
   const [selectedClients, setSelectedClients] = useState<{[key: string]: boolean}>({});
   const [clientValues, setClientValues] = useState<{[key: string]: number}>({});
+  const [nfses, setNfses] = useState<any[]>([]);
 
   useEffect(() => {
+    fetch('/api/nfse', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => setNfses(data))
+      .catch(console.error);
+
     fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } })
       .then(res => res.json())
       .then(data => {
@@ -777,7 +783,7 @@ function BatchNfseModal({ onClose, onSuccess, token }: { onClose: () => void, on
         const cv: any = {};
         data.forEach((c: any) => {
           sc[c.id] = false;
-          cv[c.id] = 300;
+          cv[c.id] = c.defaultNfseValue || 300;
         });
         setSelectedClients(sc);
         setClientValues(cv);
@@ -797,6 +803,48 @@ function BatchNfseModal({ onClose, onSuccess, token }: { onClose: () => void, on
       })
       .catch(console.error);
   }, [token]);
+
+  const clientsWithIssue = React.useMemo(() => {
+    const list = new Set<string>();
+    nfses.forEach(n => {
+      let comp = '';
+      if (n.xml) {
+        const match = n.xml.match(/<Competencia>(.*?)<\/Competencia>/);
+        if (match && match[1].length >= 7) {
+          comp = match[1].substring(0, 7);
+        }
+      }
+      if (!comp && n.issueDate) {
+        comp = n.issueDate.substring(0, 7);
+      }
+      if (comp === formData.competencia) {
+        if (n.client) list.add(n.client);
+        if (n.clientName) list.add(n.clientName);
+      }
+    });
+    return list;
+  }, [nfses, formData.competencia]);
+
+  const handleValueBlur = async (clientId: string, value: number) => {
+    const client = clients.find(c => c.id === clientId);
+    if (!client) return;
+    if (client.defaultNfseValue === value) return;
+    
+    setClients(prev => prev.map(c => c.id === clientId ? { ...c, defaultNfseValue: value } : c));
+
+    try {
+      await fetch(`/api/clients/${clientId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ ...client, defaultNfseValue: value })
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar valor padrão do cliente', error);
+    }
+  };
 
   const handleSave = async () => {
     const clientsToEmit = clients.filter(c => selectedClients[c.id]);
@@ -1021,8 +1069,10 @@ function BatchNfseModal({ onClose, onSuccess, token }: { onClose: () => void, on
               </div>
 
               <div className="flex-1 overflow-y-auto bg-brand-surface2/30 border border-brand-border rounded-lg p-2 custom-scrollbar">
-                {clients.map(client => (
-                  <div key={client.id} className="flex items-center gap-3 p-2 hover:bg-brand-surface2 rounded-lg transition-colors border-b border-brand-border/50 last:border-0">
+                {clients.map(client => {
+                  const hasIssue = clientsWithIssue.has(client.id) || clientsWithIssue.has(client.name);
+                  return (
+                  <div key={client.id} className={`flex items-center gap-3 p-2 rounded-lg transition-colors border-b border-brand-border/50 last:border-0 ${hasIssue ? 'bg-amber-500/10 hover:bg-amber-500/20' : 'hover:bg-brand-surface2'}`}>
                     <input 
                       type="checkbox"
                       className="accent-brand-green w-4 h-4 shrink-0 mt-2"
@@ -1030,8 +1080,10 @@ function BatchNfseModal({ onClose, onSuccess, token }: { onClose: () => void, on
                       onChange={(e) => setSelectedClients({...selectedClients, [client.id]: e.target.checked})}
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-medium text-brand-text truncate" title={client.name}>{client.name}</div>
-                      <div className="text-[11px] text-brand-muted font-mono">{client.cpfCnpj || client.cnpj}</div>
+                      <div className={`text-[13px] font-medium truncate ${hasIssue ? 'text-amber-400' : 'text-brand-text'}`} title={client.name}>
+                        {client.name} {hasIssue && <span className="text-[10px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded ml-2">Nota Emitida</span>}
+                      </div>
+                      <div className={`text-[11px] font-mono ${hasIssue ? 'text-amber-500/70' : 'text-brand-muted'}`}>{client.cpfCnpj || client.cnpj}</div>
                     </div>
                     <div className="w-28 shrink-0">
                       <div className="relative">
@@ -1040,13 +1092,14 @@ function BatchNfseModal({ onClose, onSuccess, token }: { onClose: () => void, on
                           type="number"
                           value={clientValues[client.id] || 0}
                           onChange={(e) => setClientValues({...clientValues, [client.id]: Number(e.target.value)})}
+                          onBlur={(e) => handleValueBlur(client.id, Number(e.target.value))}
                           className="w-full bg-brand-surface border border-brand-border rounded py-1 pl-6 pr-2 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
                           disabled={!selectedClients[client.id]}
                         />
                       </div>
                     </div>
                   </div>
-                ))}
+                )})}
                 {clients.length === 0 && (
                   <div className="p-4 text-center text-brand-muted text-[13px]">
                     Nenhum cliente cadastrado.
