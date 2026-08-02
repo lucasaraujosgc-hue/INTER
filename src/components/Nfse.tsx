@@ -872,7 +872,7 @@ function BatchNfseModal({ onClose, onSuccess, token }: { onClose: () => void, on
           },
           body: JSON.stringify({
             ...formData,
-            cliente: c.id,
+            cliente: c.name,
             valor: clientValues[c.id] || 0
           })
         });
