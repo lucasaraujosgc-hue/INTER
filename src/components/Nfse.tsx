@@ -1,142 +1,90 @@
-import React, { useState, useEffect } from 'react';
-import { Receipt, Loader2, Search, Eye, Download, Plus, X, AlertCircle, Copy } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Receipt, Loader2, Search, Eye, Download, Plus, X, Copy, FileDown, Ban, RefreshCw } from 'lucide-react';
+import { apiFetch, openBlob, brl, fmtDoc } from '../lib/api';
+import { Modal, Btn, Alert, Field, Input, Select, Textarea, JsonView, Badge } from './ui';
+import NfseEmitirModal from './NfseEmitirModal';
+
+export function competenciaDe(n: any): string {
+  if (n.competencia) return String(n.competencia).slice(0, 7);
+  const m = String(n.xml || '').match(/<(?:Competencia|dCompet)>(\d{4}-\d{2})/);
+  if (m) return m[1];
+  return String(n.issueDate || '').slice(0, 7);
+}
+
+function StatusNfse({ n }: { n: any }) {
+  if (n.status === 'canceled') return <Badge color="gray">Cancelada</Badge>;
+  if (n.status === 'issued') return <Badge color="green">{n.ambiente === '2' ? 'Emitida (teste)' : 'Emitida'}</Badge>;
+  return <Badge color="amber">Pendente</Badge>;
+}
 
 export default function Nfse({ token, refreshKey, setRefreshKey }: { token: string, refreshKey?: number, setRefreshKey?: (k: (prev: number) => number) => void }) {
   const [nfses, setNfses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [emitir, setEmitir] = useState<{ inicial?: any } | null>(null);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
-  const [duplicateData, setDuplicateData] = useState<any>(null);
-  const [viewingXml, setViewingXml] = useState<any | null>(null);
+  const [viewing, setViewing] = useState<any | null>(null);
+  const [cancelando, setCancelando] = useState<any | null>(null);
+  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [busy, setBusy] = useState('');
 
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [emissaoStart, setEmissaoStart] = useState('');
   const [emissaoEnd, setEmissaoEnd] = useState('');
+  const [statusFiltro, setStatusFiltro] = useState('');
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [showClientFilter, setShowClientFilter] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [sysSettings, setSysSettings] = useState<any>({});
   const ITEMS_PER_PAGE = 10;
 
-  useEffect(() => {
-    fetchNfse();
-    fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
-      .then(data => setSysSettings(data))
-      .catch(console.error);
-  }, [token, refreshKey]);
-
-  const handleViewPdf = async (nfseId: string) => {
-    try {
-      const res = await fetch(`/api/nfse/${nfseId}/pdf`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!res.ok) {
-        throw new Error('Erro ao buscar o PDF. A NFS-e pode ainda não estar pronta.');
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      // To force download you could set a.download, but here we just open in new tab for viewing
-      a.click();
-    } catch (error: any) {
-      alert(error.message || 'Erro ao comunicar com o servidor');
-    }
-  };
-
   const fetchNfse = () => {
-    fetch('/api/nfse', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
-      .then(data => {
-        setNfses(data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
+    apiFetch<any[]>(token, '/api/nfse')
+      .then(data => { setNfses(data); setLoading(false); })
+      .catch(err => { setMsg({ type: 'error', text: err.message }); setLoading(false); });
   };
+
+  useEffect(() => { fetchNfse(); }, [token, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSuccess = () => {
     fetchNfse();
-    if (setRefreshKey) {
-      setRefreshKey(k => k + 1);
-    }
+    setRefreshKey?.(k => k + 1);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente excluir esta NFS-e?')) return;
+  const handleDelete = async (n: any) => {
+    if (!confirm('Excluir este registro do sistema? (Isso NÃO cancela a nota na prefeitura/Sefin.)')) return;
     try {
-      const res = await fetch(`/api/nfse/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        fetchNfse();
-        if (setRefreshKey) setRefreshKey(k => k + 1);
-      } else {
-        alert('Erro ao excluir NFS-e');
-      }
-    } catch(err) {
-      alert('Erro de conexão ao excluir NFS-e');
-    }
+      await apiFetch(token, `/api/nfse/${n.id}`, { method: 'DELETE' });
+      handleSuccess();
+    } catch (err: any) { setMsg({ type: 'error', text: err.message }); }
   };
 
-  const handleDownload = (nfse: any) => {
-    if (!nfse.xml) {
-      alert('XML não disponível para esta nota.');
-      return;
-    }
-    const blob = new Blob([nfse.xml], { type: 'application/xml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${nfse.id}.xml`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const sincronizar = async (n: any) => {
+    setBusy(n.id);
+    try {
+      await apiFetch(token, `/api/nfse/${n.id}/sincronizar`, { method: 'POST' });
+      setMsg({ type: 'success', text: 'NFS-e atualizada a partir da Sefin Nacional.' });
+      fetchNfse();
+    } catch (err: any) { setMsg({ type: 'error', text: err.message }); } finally { setBusy(''); }
   };
+
+  const filteredNfses = useMemo(() => nfses.filter(n => {
+    const q = search.toLowerCase();
+    const matchesSearch = !q || [n.clientName, n.id, n.numero, n.chaveAcesso, n.clientDoc].some(v => String(v || '').toLowerCase().includes(q));
+    const comp = competenciaDe(n);
+    if (startDate && comp < startDate) return false;
+    if (endDate && comp > endDate) return false;
+    if (emissaoStart && n.issueDate < emissaoStart) return false;
+    if (emissaoEnd && n.issueDate > emissaoEnd) return false;
+    if (statusFiltro && n.status !== statusFiltro) return false;
+    if (selectedClients.length > 0 && !selectedClients.includes(n.clientName)) return false;
+    return matchesSearch;
+  }).sort((a, b) => String(b.issueDate).localeCompare(String(a.issueDate))), [nfses, search, startDate, endDate, emissaoStart, emissaoEnd, statusFiltro, selectedClients]);
 
   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-brand-green" /></div>;
 
-  const filteredNfses = nfses.filter(n => {
-    const matchesSearch = n.clientName?.toLowerCase().includes(search.toLowerCase()) || n.id?.toLowerCase().includes(search.toLowerCase());
-    
-    let comp = '';
-    if (n.xml) {
-      const match = n.xml.match(/<Competencia>(.*?)<\/Competencia>/);
-      if (match && match[1].length >= 7) {
-        comp = match[1].substring(0, 7); // yyyy-mm
-      }
-    }
-    if (!comp && n.issueDate) {
-      comp = n.issueDate.substring(0, 7);
-    }
-
-    let inRange = true;
-    if (startDate && comp < startDate) inRange = false;
-    if (endDate && comp > endDate) inRange = false;
-
-    let inIssueDateRange = true;
-    if (emissaoStart && n.issueDate < emissaoStart) inIssueDateRange = false;
-    if (emissaoEnd && n.issueDate > emissaoEnd) inIssueDateRange = false;
-    
-    let matchesClients = true;
-    if (selectedClients.length > 0) {
-      matchesClients = selectedClients.includes(n.clientName);
-    }
-    
-    return matchesSearch && inRange && inIssueDateRange && matchesClients;
-  });
-
   const uniqueClients = Array.from(new Set(nfses.map(n => n.clientName).filter(Boolean))) as string[];
-  const totalValue = filteredNfses.reduce((acc, n) => acc + (Number(n.value) || 0), 0);
-
+  const totalValue = filteredNfses.filter(n => n.status !== 'canceled').reduce((acc, n) => acc + (Number(n.value) || 0), 0);
   const totalPages = Math.ceil(filteredNfses.length / ITEMS_PER_PAGE);
   const paginatedNfses = filteredNfses.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
@@ -149,110 +97,66 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
             <Plus size={16} strokeWidth={2.5} />
             Emitir NFS-e em Lote
           </button>
-          <button onClick={() => { setDuplicateData(null); setIsModalOpen(true); }} className="flex items-center gap-1.5 px-4 py-2 bg-brand-green hover:bg-brand-green-dim text-black rounded-lg text-[13px] font-semibold transition-colors cursor-pointer">
+          <button onClick={() => setEmitir({})} className="flex items-center gap-1.5 px-4 py-2 bg-brand-green hover:bg-brand-green-dim text-black rounded-lg text-[13px] font-semibold transition-colors cursor-pointer">
             <Plus size={16} strokeWidth={2.5} />
             Emitir NFS-e
           </button>
         </div>
       </div>
 
+      {msg && <div className="mb-4"><Alert type={msg.type} onClose={() => setMsg(null)}>{msg.text}</Alert></div>}
+
       <div className="bg-brand-surface border border-brand-border rounded-xl overflow-hidden flex flex-col min-h-[500px]">
-        <div className="p-4 border-b border-brand-border flex gap-4 items-center">
-          <div className="relative flex-1">
+        <div className="p-4 border-b border-brand-border flex flex-wrap gap-4 items-end">
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-dim" size={16} />
-            <input 
-              type="text" 
+            <input
+              type="text"
               value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar nota fiscal..." 
+              onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+              placeholder="Buscar por cliente, número ou chave..."
               className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 pl-10 pr-4 text-brand-text outline-none focus:border-brand-green transition-colors text-[13px]"
             />
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <div className="relative">
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Empresas</label>
-                <div 
-                  onClick={() => setShowClientFilter(!showClientFilter)}
-                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none hover:border-brand-green transition-colors text-[13px] cursor-pointer min-w-[150px] flex justify-between items-center"
-                >
-                  <span className="truncate max-w-[120px]">
-                    {selectedClients.length === 0 ? 'Todas' : `${selectedClients.length} selecionada(s)`}
-                  </span>
+                <div onClick={() => setShowClientFilter(!showClientFilter)} className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text hover:border-brand-green transition-colors text-[13px] cursor-pointer min-w-[150px]">
+                  {selectedClients.length === 0 ? 'Todas' : `${selectedClients.length} selecionada(s)`}
                 </div>
               </div>
-              
               {showClientFilter && (
-                <div className="absolute top-full right-0 mt-1 w-64 bg-brand-surface2 border border-brand-border rounded-lg shadow-xl z-10 max-h-60 overflow-y-auto">
-                  <div className="p-2 flex flex-col gap-1">
-                    <label className="flex items-center gap-2 p-2 hover:bg-brand-surface cursor-pointer rounded">
-                      <input 
-                        type="checkbox" 
-                        checked={selectedClients.length === 0}
-                        onChange={() => setSelectedClients([])}
-                        className="accent-brand-green w-4 h-4"
-                      />
-                      <span className="text-sm text-brand-text truncate">Todas as empresas</span>
+                <div className="absolute top-full right-0 mt-1 w-64 bg-brand-surface2 border border-brand-border rounded-lg shadow-xl z-10 max-h-60 overflow-y-auto p-2 flex flex-col gap-1">
+                  <label className="flex items-center gap-2 p-2 hover:bg-brand-surface cursor-pointer rounded">
+                    <input type="checkbox" checked={selectedClients.length === 0} onChange={() => setSelectedClients([])} className="accent-brand-green w-4 h-4" />
+                    <span className="text-sm text-brand-text">Todas as empresas</span>
+                  </label>
+                  {uniqueClients.map(client => (
+                    <label key={client} className="flex items-center gap-2 p-2 hover:bg-brand-surface cursor-pointer rounded">
+                      <input type="checkbox" checked={selectedClients.includes(client)} onChange={e => setSelectedClients(prev => e.target.checked ? [...prev, client] : prev.filter(c => c !== client))} className="accent-brand-green w-4 h-4 shrink-0" />
+                      <span className="text-sm text-brand-text truncate" title={client}>{client}</span>
                     </label>
-                    <div className="w-full h-px bg-brand-border my-1"></div>
-                    {uniqueClients.map(client => (
-                      <label key={client} className="flex items-center gap-2 p-2 hover:bg-brand-surface cursor-pointer rounded">
-                        <input 
-                          type="checkbox" 
-                          checked={selectedClients.includes(client)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedClients(prev => [...prev, client]);
-                            } else {
-                              setSelectedClients(prev => prev.filter(c => c !== client));
-                            }
-                          }}
-                          className="accent-brand-green w-4 h-4 shrink-0"
-                        />
-                        <span className="text-sm text-brand-text truncate" title={client}>{client}</span>
-                      </label>
-                    ))}
-                  </div>
+                  ))}
                 </div>
               )}
             </div>
-
+            {[
+              ['Competência inicial', 'month', startDate, setStartDate],
+              ['Competência final', 'month', endDate, setEndDate],
+              ['Emissão inicial', 'date', emissaoStart, setEmissaoStart],
+              ['Emissão final', 'date', emissaoEnd, setEmissaoEnd],
+            ].map(([label, type, value, set]: any) => (
+              <div key={label} className="flex flex-col gap-1">
+                <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">{label}</label>
+                <input type={type} value={value} onChange={e => { set(e.target.value); setCurrentPage(1); }} className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none focus:border-brand-green text-[13px] [color-scheme:dark]" />
+              </div>
+            ))}
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Competência Inicial</label>
-              <input 
-                type="month" 
-                value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none focus:border-brand-green transition-colors text-[13px]"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Competência Final</label>
-              <input 
-                type="month" 
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none focus:border-brand-green transition-colors text-[13px]"
-              />
-            </div>
-            
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Emissão Inicial</label>
-              <input 
-                type="date" 
-                value={emissaoStart}
-                onChange={e => setEmissaoStart(e.target.value)}
-                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none focus:border-brand-green transition-colors text-[13px]"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Emissão Final</label>
-              <input 
-                type="date" 
-                value={emissaoEnd}
-                onChange={e => setEmissaoEnd(e.target.value)}
-                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none focus:border-brand-green transition-colors text-[13px]"
-              />
+              <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Status</label>
+              <select value={statusFiltro} onChange={e => setStatusFiltro(e.target.value)} className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none text-[13px]">
+                <option value="">Todos</option><option value="issued">Emitidas</option><option value="canceled">Canceladas</option><option value="pending">Pendentes</option>
+              </select>
             </div>
           </div>
         </div>
@@ -260,488 +164,102 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
           <table className="w-full text-left border-collapse">
             <thead>
               <tr>
-                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Número</th>
-                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Cliente</th>
-                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Valor</th>
-                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Competência</th>
-                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Emissão</th>
-                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">Status</th>
-                <th className="px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2 text-right">Ações</th>
+                {['Número', 'Cliente', 'Valor', 'Competência', 'Emissão', 'Status', 'Ações'].map(h => (
+                  <th key={h} className={`px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2 ${h === 'Ações' ? 'text-right' : ''}`}>{h}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {paginatedNfses.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-brand-muted">
-                    <Receipt size={48} className="mx-auto mb-4 opacity-20" />
-                    <p>Nenhuma NFS-e encontrada.</p>
+                <tr><td colSpan={7} className="px-6 py-8 text-center text-brand-muted"><Receipt size={48} className="mx-auto mb-4 opacity-20" /><p>Nenhuma NFS-e encontrada.</p></td></tr>
+              ) : paginatedNfses.map(n => (
+                <tr key={n.id} className="border-b border-white/5 last:border-0 hover:bg-brand-surface2 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="text-brand-text font-mono text-sm">{n.numero || '—'}</div>
+                    <div className="text-[10.5px] text-brand-dim">{n.provedor === 'nacional' ? 'Nacional' : 'WebISS'}{n.origem?.tipo === 'inter-extrato' ? ' · entrada Inter' : n.origem?.tipo === 'cobranca' ? ' · cobrança' : ''}</div>
+                  </td>
+                  <td className="px-6 py-4"><div className="font-medium text-brand-text">{n.clientName}</div>{n.clientDoc && <div className="text-[11px] text-brand-muted font-mono">{fmtDoc(n.clientDoc)}</div>}</td>
+                  <td className="px-6 py-4 font-mono text-sm">{brl(n.value)}</td>
+                  <td className="px-6 py-4 text-brand-text font-medium text-sm">{competenciaDe(n).split('-').reverse().join('/')}</td>
+                  <td className="px-6 py-4 text-brand-muted text-sm">{String(n.issueDate || '').split('-').reverse().join('/')}</td>
+                  <td className="px-6 py-4"><StatusNfse n={n} /></td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex gap-1.5 justify-end">
+                      {(n.chaveAcesso || (n.numero && n.codigoVerificacao)) && (
+                        <button onClick={() => openBlob(token, `/api/nfse/${n.id}/pdf`).catch(e => setMsg({ type: 'error', text: e.message }))} className="flex items-center p-1.5 text-brand-dim hover:text-brand-green bg-brand-surface border border-brand-border rounded transition-colors" title="DANFSe (PDF)">
+                          <FileDown size={14} />
+                        </button>
+                      )}
+                      <button onClick={() => openBlob(token, `/api/nfse/${n.id}/xml`, `${n.chaveAcesso || n.id}.xml`).catch(e => setMsg({ type: 'error', text: e.message }))} className="text-brand-muted hover:text-brand-text p-1" title="Baixar XML"><Download size={16} /></button>
+                      <button onClick={() => setViewing(n)} className="text-brand-muted hover:text-brand-text p-1" title="Detalhes e XML"><Eye size={16} /></button>
+                      <button onClick={() => setEmitir({ inicial: { clienteId: n.client, cliente: n.clientName, valor: n.value, descricao: n.descricao, competencia: new Date().toISOString().slice(0, 7) } })} className="text-brand-muted hover:text-brand-green p-1" title="Duplicar"><Copy size={16} /></button>
+                      {n.provedor === 'nacional' && (
+                        <button onClick={() => sincronizar(n)} disabled={busy === n.id} className="text-brand-muted hover:text-brand-text p-1" title="Consultar na Sefin Nacional">{busy === n.id ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}</button>
+                      )}
+                      {n.provedor === 'nacional' && n.status === 'issued' && (
+                        <button onClick={() => setCancelando(n)} className="text-brand-muted hover:text-red-400 p-1" title="Cancelar NFS-e"><Ban size={16} /></button>
+                      )}
+                      <button onClick={() => handleDelete(n)} className="text-brand-muted hover:text-red-500 p-1" title="Excluir registro"><X size={16} /></button>
+                    </div>
                   </td>
                 </tr>
-              ) : (
-                paginatedNfses.map(n => {
-                  let comp = '';
-                  if (n.xml) {
-                    const match = n.xml.match(/<Competencia>(.*?)<\/Competencia>/);
-                    if (match && match[1].length >= 7) {
-                      comp = match[1].substring(0, 7);
-                    }
-                  }
-                  if (!comp && n.issueDate) {
-                    comp = n.issueDate.substring(0, 7);
-                  }
-                  const compFormatted = comp.split('-').reverse().join('/');
-
-                  return (
-                  <tr key={n.id} className="border-b border-white/5 last:border-0 hover:bg-brand-surface2 transition-colors">
-                    <td className="px-6 py-4 text-brand-muted font-mono text-sm">{n.numero || n.id}</td>
-                    <td className="px-6 py-4 font-medium text-brand-text">{n.clientName}</td>
-                    <td className="px-6 py-4 font-mono text-sm">R$ {n.value.toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
-                    <td className="px-6 py-4 text-brand-text font-medium text-sm">{compFormatted}</td>
-                    <td className="px-6 py-4 text-brand-muted text-sm">{n.issueDate.split('-').reverse().join('/')}</td>
-                    <td className="px-6 py-4">
-                      {n.status === 'issued' ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand-green/10 text-brand-green">
-                          <span className="w-1.5 h-1.5 rounded-full bg-brand-green" />
-                          Emitida
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-500">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                          Pendente
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex gap-2 justify-end">
-                        {n.numero && n.codigoVerificacao && (
-                          <button 
-                            onClick={() => handleViewPdf(n.id)}
-                            className="flex items-center justify-center p-1.5 text-brand-dim hover:text-brand-green bg-brand-surface border border-brand-border rounded hover:bg-brand-surface2/50 transition-colors"
-                            title="Nota Oficial (PDF baixado pelo sistema)"
-                          >
-                            <span className="text-[10px] font-bold tracking-tight uppercase mr-1">PDF</span>
-                          </button>
-                        )}
-                        <button 
-                          onClick={() => { setDuplicateData(n); setIsModalOpen(true); }}
-                          className="text-brand-muted hover:text-brand-green transition-colors p-1"
-                          title="Duplicar NFS-e"
-                        >
-                          <Copy size={16} />
-                        </button>
-                        <button 
-                          onClick={() => {
-                            if (!n.xml) {
-                              alert('Erro: sem dados para exibir.');
-                              return;
-                            }
-                            setViewingXml(n);
-                          }}
-                          className="text-brand-muted hover:text-brand-text transition-colors p-1"
-                          title="Visualizar XML e Log"
-                        >
-                          <Eye size={16} />
-                        </button>
-                        <button 
-                          onClick={() => handleDownload(n)}
-                          className="text-brand-muted hover:text-brand-text transition-colors p-1"
-                          title="Baixar XML"
-                        >
-                          <Download size={16} />
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(n.id)}
-                          className="text-brand-muted hover:text-red-500 transition-colors p-1"
-                          title="Excluir NFS-e"
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-                })
-              )}
+              ))}
             </tbody>
           </table>
         </div>
-          {/* Pagination */}
-          <div className="p-4 flex items-center justify-between border-t border-brand-border bg-brand-surface2/30">
-            <div className="flex gap-4 items-center">
-              <div className="text-[12px] text-brand-muted">
-                {totalPages > 1 && (
-                  <span>
-                    Mostrando <span className="font-medium text-brand-text">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> ao <span className="font-medium text-brand-text">{Math.min(currentPage * ITEMS_PER_PAGE, filteredNfses.length)}</span> de <span className="font-medium text-brand-text">{filteredNfses.length}</span> resultados
-                  </span>
-                )}
-                {totalPages <= 1 && (
-                  <span><span className="font-medium text-brand-text">{filteredNfses.length}</span> resultado(s)</span>
-                )}
-              </div>
-              <div className="h-4 w-px bg-brand-border hidden sm:block"></div>
-              <div className="text-[13px] font-medium text-brand-text bg-brand-green/10 px-3 py-1 rounded-full text-brand-green border border-brand-green/20">
-                Total Acumulado: R$ {totalValue.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
-              </div>
+        <div className="p-4 flex items-center justify-between border-t border-brand-border bg-brand-surface2/30">
+          <div className="flex gap-4 items-center text-[12px] text-brand-muted">
+            <span><span className="font-medium text-brand-text">{filteredNfses.length}</span> resultado(s)</span>
+            <span className="text-[13px] font-medium bg-brand-green/10 px-3 py-1 rounded-full text-brand-green border border-brand-green/20">Total (sem canceladas): {brl(totalValue)}</span>
+          </div>
+          {totalPages > 1 && (
+            <div className="flex gap-1">
+              <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} className="px-3 py-1.5 rounded-md bg-brand-surface2 border border-brand-border text-brand-text text-[12px] disabled:opacity-50">Anterior</button>
+              <span className="px-2 py-1.5 text-[12px] text-brand-muted">{currentPage}/{totalPages}</span>
+              <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} className="px-3 py-1.5 rounded-md bg-brand-surface2 border border-brand-border text-brand-text text-[12px] disabled:opacity-50">Próxima</button>
             </div>
+          )}
+        </div>
+      </div>
 
-            {totalPages > 1 && (
-              <div className="flex gap-1">
-                <button 
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  className="px-3 py-1.5 rounded-md bg-brand-surface2 border border-brand-border text-brand-text text-[12px] disabled:opacity-50 hover:bg-brand-surface3 transition-colors"
-                >
-                  Anterior
-                </button>
-                <button 
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  className="px-3 py-1.5 rounded-md bg-brand-surface2 border border-brand-border text-brand-text text-[12px] disabled:opacity-50 hover:bg-brand-surface3 transition-colors"
-                >
-                  Próxima
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      {isModalOpen && <NewNfseModal onClose={() => setIsModalOpen(false)} onSuccess={handleSuccess} token={token} initialData={duplicateData} />}
+      {emitir && <NfseEmitirModal token={token} inicial={emitir.inicial} onClose={() => setEmitir(null)} onSuccess={handleSuccess} />}
       {isBatchModalOpen && <BatchNfseModal onClose={() => setIsBatchModalOpen(false)} onSuccess={handleSuccess} token={token} />}
-      
-      {viewingXml && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-brand-surface border border-brand-border rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl">
-            <div className="flex justify-between items-center p-4 border-b border-brand-border">
-              <div>
-                <h3 className="text-lg font-bold text-brand-text">Visualizar Log da NFS-e</h3>
-                {viewingXml.numero && <p className="text-xs text-brand-muted mt-1">Número gerado: {viewingXml.numero}</p>}
-                {viewingXml.codigoVerificacao && <p className="text-[11px] font-mono text-brand-green mt-1">Código Verificação: {viewingXml.codigoVerificacao}</p>}
-              </div>
-              <button onClick={() => setViewingXml(null)} className="text-brand-muted hover:text-brand-text">
-                <X size={24} />
-              </button>
-            </div>
-            <div className="p-4 overflow-auto flex-1 flex flex-col gap-4">
-              {viewingXml.responseXml && (
-                <div>
-                  <h4 className="text-sm font-bold text-brand-dim mb-2 flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-brand-green"></div> Retorno do Servidor (WebISS)
-                  </h4>
-                  <pre className="text-xs text-brand-muted font-mono whitespace-pre-wrap break-all bg-[#0a0a0a] p-4 rounded-lg border border-brand-border">
-                    {viewingXml.responseXml}
-                  </pre>
-                </div>
-              )}
-              <div>
-                <h4 className="text-sm font-bold text-brand-dim mb-2 flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-blue-500"></div> XML Enviado
-                </h4>
-                <pre className="text-xs text-brand-muted font-mono whitespace-pre-wrap break-all bg-[#0a0a0a] p-4 rounded-lg border border-brand-border opacity-70">
-                  {viewingXml.xml}
-                </pre>
-              </div>
-            </div>
-            <div className="p-4 border-t border-brand-border flex justify-end">
-              <button 
-                onClick={() => setViewingXml(null)}
-                className="px-4 py-2 bg-brand-surface2 hover:bg-brand-border text-brand-text rounded-lg transition-colors"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
+      {cancelando && <CancelarNfseModal token={token} n={cancelando} onClose={() => setCancelando(null)} onDone={(t) => { setMsg({ type: 'success', text: t }); handleSuccess(); }} />}
+
+      {viewing && (
+        <Modal title={`NFS-e ${viewing.numero || ''}`} subtitle={viewing.chaveAcesso ? `Chave de acesso: ${viewing.chaveAcesso}` : viewing.codigoVerificacao ? `Código de verificação: ${viewing.codigoVerificacao}` : viewing.id} onClose={() => setViewing(null)} width="max-w-4xl">
+          {viewing.alertas?.length > 0 && <Alert type="warn">{viewing.alertas.map((a: any) => `${a.codigo ? `[${a.codigo}] ` : ''}${a.descricao}`).join('\n')}</Alert>}
+          {viewing.cancelamento && <Alert type="info">Cancelada em {new Date(viewing.cancelamento.em).toLocaleString('pt-BR')}: {viewing.cancelamento.motivo}</Alert>}
+          {viewing.nfseXml && <div><h4 className="text-sm font-bold text-brand-dim mb-2">XML da NFS-e (autorizada)</h4><JsonView data={viewing.nfseXml} /></div>}
+          {viewing.responseXml && <div><h4 className="text-sm font-bold text-brand-dim mb-2">Retorno do WebISS</h4><JsonView data={viewing.responseXml} /></div>}
+          <div><h4 className="text-sm font-bold text-brand-dim mb-2">XML enviado (DPS/RPS assinado)</h4><JsonView data={viewing.xml || ''} /></div>
+        </Modal>
       )}
     </div>
   );
 }
 
-function NewNfseModal({ onClose, onSuccess, token, initialData }: { onClose: () => void, onSuccess: () => void, token: string, initialData?: any }) {
+function CancelarNfseModal({ token, n, onClose, onDone }: { token: string; n: any; onClose: () => void; onDone: (t: string) => void }) {
+  const [codigoMotivo, setCodigoMotivo] = useState('1');
+  const [motivo, setMotivo] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [clients, setClients] = useState<any[]>([]);
-
-  // Tenta extrair a descrição e outros dados do XML caso estejam salvos
-  let initialDesc = '';
-  let initialCompetencia = '';
-  if (initialData?.xml) {
-    const descMatch = initialData.xml.match(/<Discriminacao>(.*?)<\/Discriminacao>/);
-    if (descMatch) initialDesc = descMatch[1];
-    
-    const compMatch = initialData.xml.match(/<Competencia>(.*?)<\/Competencia>/);
-    if (compMatch && compMatch[1].length >= 7) {
-      initialCompetencia = compMatch[1].substring(0, 7); // yyyy-mm
-    }
-  }
-
-  const [formData, setFormData] = useState({
-    cliente: initialData?.clientName || '',
-    valor: initialData?.value || 300,
-    descricao: initialDesc || initialData?.descricao || 'Prestação de serviços contábeis, compreendendo escrituração contábil e fiscal, apuração de tributos, elaboração e entrega de obrigações acessórias, assessoria e consultoria contábil, referente ao período de xx/202x.',
-    itemLc116: initialData?.itemLc116 || '1719',
-    aliquota: initialData?.aliquota || 2.01,
-    codigoTributacaoMunicipio: initialData?.codigoTributacaoMunicipio || '1719',
-    cnae: initialData?.cnae || '6920601',
-    competencia: initialCompetencia || initialData?.competencia || new Date().toISOString().slice(0, 7), // YYYY-MM
-    issRetido: initialData?.issRetido || 2,
-    regimeEspecialTributacao: initialData?.regimeEspecialTributacao || 6,
-    optanteSimplesNacional: initialData?.optanteSimplesNacional || 1,
-    incentivoFiscal: initialData?.incentivoFiscal || 2
-  });
-
-  useEffect(() => {
-    fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
-      .then(data => setClients(data))
-      .catch(console.error);
-
-    if (!initialData) {
-      fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-        .then(res => res.json())
-        .then(data => {
-          setFormData(prev => ({
-            ...prev,
-            itemLc116: data.itemLc116 || '1719',
-            aliquota: data.aliquota || 2.01,
-            codigoTributacaoMunicipio: data.codigoTributacaoMunicipio || '1719',
-            cnae: data.cnae || '6920601'
-          }));
-        })
-        .catch(console.error);
-    }
-  }, [token, initialData]);
-
-  const handleSave = async () => {
-    if (!formData.cliente) {
-      setError('Selecione um cliente');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setSuccess('');
-
+  const [err, setErr] = useState('');
+  const go = async () => {
+    setLoading(true); setErr('');
     try {
-      const res = await fetch('/api/nfse/emitir', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(formData)
-      });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.error || 'Erro ao emitir NFS-e');
-      }
-
-      setSuccess(data.message || 'NFS-e emitida com sucesso!');
-      onSuccess();
-      setTimeout(() => {
-        onClose();
-      }, 2000);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+      const r = await apiFetch<any>(token, `/api/nfse/${n.id}/cancelar`, { method: 'POST', body: { codigoMotivo, motivo } });
+      onDone(r.message);
+      onClose();
+    } catch (e: any) { setErr(e.message); } finally { setLoading(false); }
   };
-
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200" onClick={onClose}>
-      <div className="bg-brand-surface border border-brand-border-green rounded-2xl w-[500px] max-w-[95vw] shadow-[0_24px_80px_rgba(0,0,0,0.5)] animate-in zoom-in-95 slide-in-from-bottom-4 duration-200 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-        <div className="p-5 px-6 border-b border-brand-border flex items-center gap-3 shrink-0">
-          <div className="w-9 h-9 rounded-xl bg-brand-green-subtle border border-brand-border-green flex items-center justify-center text-brand-green">
-            <Receipt size={18} strokeWidth={2.5} />
-          </div>
-          <div>
-            <h2 className="text-base font-bold text-brand-text">Emitir NFS-e Avulsa</h2>
-            <div className="text-xs text-brand-muted mt-0.5">Emissão direta sem gerar cobrança</div>
-          </div>
-          <button onClick={onClose} className="ml-auto p-1 text-brand-muted hover:text-brand-text hover:bg-brand-surface2 rounded-md transition-colors">
-            <X size={18} strokeWidth={2.5} />
-          </button>
-        </div>
-        
-        <div className="p-5 px-6 overflow-y-auto flex-1">
-          {error && (
-            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex flex-col gap-2">
-              <div className="text-red-500 text-[13px] font-medium flex items-center gap-2">
-                <AlertCircle size={16} />
-                {error}
-              </div>
-            </div>
-          )}
-          {success && (
-            <div className="mb-4 p-3 bg-brand-green/10 border border-brand-green/30 rounded-lg flex flex-col gap-2">
-              <div className="text-brand-green text-[13px] font-medium flex items-center gap-2">
-                <Receipt size={16} />
-                {success}
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Cliente</label>
-              <select 
-                value={formData.cliente}
-                onChange={e => setFormData({...formData, cliente: e.target.value})}
-                className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-              >
-                <option value="">Selecione um cliente...</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.name}>{c.name} ({c.document})</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Valor (R$)</label>
-                <input 
-                  type="number" 
-                  value={formData.valor}
-                  onChange={e => setFormData({...formData, valor: Number(e.target.value)})}
-                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Item LC 116</label>
-                <input 
-                  type="text" 
-                  value={formData.itemLc116}
-                  onChange={e => setFormData({...formData, itemLc116: e.target.value})}
-                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Alíquota (%)</label>
-                <input 
-                  type="number" 
-                  step="0.01"
-                  value={formData.aliquota}
-                  onChange={e => setFormData({...formData, aliquota: Number(e.target.value)})}
-                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Código Tributação</label>
-                <input 
-                  type="text" 
-                  value={formData.codigoTributacaoMunicipio}
-                  onChange={e => setFormData({...formData, codigoTributacaoMunicipio: e.target.value})}
-                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">CNAE</label>
-                <input 
-                  type="text" 
-                  value={formData.cnae}
-                  onChange={e => setFormData({...formData, cnae: e.target.value})}
-                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Competência</label>
-                <input 
-                  type="month" 
-                  value={formData.competencia}
-                  onChange={e => setFormData({...formData, competencia: e.target.value})}
-                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">ISS Retido</label>
-                <select 
-                  value={formData.issRetido}
-                  onChange={e => setFormData({...formData, issRetido: Number(e.target.value)})}
-                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                >
-                  <option value={1}>Sim (1)</option>
-                  <option value={2}>Não (2)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Regime Especial Trib.</label>
-                <select 
-                  value={formData.regimeEspecialTributacao}
-                  onChange={e => setFormData({...formData, regimeEspecialTributacao: Number(e.target.value)})}
-                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                >
-                  <option value={1}>1 - Microempresa Municipal</option>
-                  <option value={2}>2 - Estimativa</option>
-                  <option value={3}>3 - Sociedade de Profissionais</option>
-                  <option value={4}>4 - Cooperativa</option>
-                  <option value={5}>5 - MEI</option>
-                  <option value={6}>6 - ME ou EPP do Simples Nacional</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Optante Simples Nac.</label>
-                <select 
-                  value={formData.optanteSimplesNacional}
-                  onChange={e => setFormData({...formData, optanteSimplesNacional: Number(e.target.value)})}
-                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                >
-                  <option value={1}>Sim (1)</option>
-                  <option value={2}>Não (2)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Incentivo Fiscal</label>
-                <select 
-                  value={formData.incentivoFiscal}
-                  onChange={e => setFormData({...formData, incentivoFiscal: Number(e.target.value)})}
-                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                >
-                  <option value={1}>Sim (1)</option>
-                  <option value={2}>Não (2)</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Descrição do Serviço</label>
-              <textarea 
-                value={formData.descricao}
-                onChange={e => setFormData({...formData, descricao: e.target.value})}
-                rows={3}
-                className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors resize-none"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="p-4 px-6 border-t border-brand-border bg-brand-surface2/50 flex justify-end gap-3 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-[13px] font-semibold text-brand-muted hover:text-brand-text transition-colors">
-            Cancelar
-          </button>
-          <button 
-            onClick={handleSave}
-            disabled={loading}
-            className="flex items-center gap-2 px-5 py-2 bg-brand-green hover:bg-brand-green-dim text-black rounded-lg text-[13px] font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} strokeWidth={2.5} />}
-            Emitir NFS-e
-          </button>
-        </div>
-      </div>
-    </div>
+    <Modal title={`Cancelar NFS-e nº ${n.numero}`} subtitle={`${n.clientName} · ${brl(n.value)}`} onClose={onClose} width="max-w-lg"
+      footer={<><Btn variant="ghost" onClick={onClose}>Voltar</Btn><Btn variant="danger" loading={loading} disabled={motivo.trim().length < 15} onClick={go}>Cancelar NFS-e</Btn></>}>
+      {err && <Alert type="error">{err}</Alert>}
+      <Alert type="warn">O cancelamento é registrado como evento na Sefin Nacional e não pode ser desfeito. Verifique o prazo de cancelamento do município.</Alert>
+      <Field label="Motivo"><Select value={codigoMotivo} onChange={e => setCodigoMotivo(e.target.value)} options={[{ value: '1', label: '1 - Erro na emissão' }, { value: '2', label: '2 - Serviço não prestado' }, { value: '9', label: '9 - Outros' }]} /></Field>
+      <Field label="Justificativa (mín. 15 caracteres)"><Textarea rows={3} maxLength={255} value={motivo} onChange={e => setMotivo(e.target.value)} /></Field>
+    </Modal>
   );
 }
 
@@ -751,73 +269,33 @@ function BatchNfseModal({ onClose, onSuccess, token }: { onClose: () => void, on
   const [success, setSuccess] = useState('');
   const [clients, setClients] = useState<any[]>([]);
   const [progress, setProgress] = useState(0);
-
-  const [formData, setFormData] = useState({
-    descricao: 'Prestação de serviços contábeis, compreendendo escrituração contábil e fiscal, apuração de tributos, elaboração e entrega de obrigações acessórias, assessoria e consultoria contábil, referente ao período de xx/202x.',
-    itemLc116: '1719',
-    aliquota: 2.01,
-    codigoTributacaoMunicipio: '1719',
-    cnae: '6920601',
-    competencia: new Date().toISOString().slice(0, 7), // YYYY-MM
-    issRetido: 2,
-    regimeEspecialTributacao: 6,
-    optanteSimplesNacional: 1,
-    incentivoFiscal: 2
-  });
-
-  const [selectedClients, setSelectedClients] = useState<{[key: string]: boolean}>({});
-  const [clientValues, setClientValues] = useState<{[key: string]: number}>({});
+  const [log, setLog] = useState<string[]>([]);
+  const [formData, setFormData] = useState({ descricao: '', cTribNac: '17.19', pAliq: '', competencia: new Date().toISOString().slice(0, 7), tpRetISSQN: '1' });
+  const [selectedClients, setSelectedClients] = useState<{ [key: string]: boolean }>({});
+  const [clientValues, setClientValues] = useState<{ [key: string]: number }>({});
   const [nfses, setNfses] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/nfse', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
-      .then(data => setNfses(data))
-      .catch(console.error);
-
-    fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
-      .then(data => {
-        setClients(data);
-        const sc: any = {};
-        const cv: any = {};
-        data.forEach((c: any) => {
-          sc[c.id] = false;
-          cv[c.id] = c.defaultNfseValue || 300;
-        });
-        setSelectedClients(sc);
-        setClientValues(cv);
-      })
-      .catch(console.error);
-
-    fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
-      .then(data => {
-        setFormData(prev => ({
-          ...prev,
-          itemLc116: data.itemLc116 || '1719',
-          aliquota: data.aliquota || 2.01,
-          codigoTributacaoMunicipio: data.codigoTributacaoMunicipio || '1719',
-          cnae: data.cnae || '6920601'
-        }));
-      })
-      .catch(console.error);
+    apiFetch<any[]>(token, '/api/nfse').then(setNfses).catch(console.error);
+    apiFetch<any[]>(token, '/api/clients').then(data => {
+      setClients(data);
+      const cv: any = {};
+      data.forEach((c: any) => { cv[c.id] = c.defaultNfseValue || 300; });
+      setClientValues(cv);
+    }).catch(console.error);
+    apiFetch<any>(token, '/api/settings').then(s => setFormData(prev => ({
+      ...prev,
+      descricao: s.nfse?.descricaoPadrao || '',
+      cTribNac: s.nfse?.cTribNac || '17.19',
+      pAliq: s.nfse?.pAliq ? String(s.nfse.pAliq) : '',
+      tpRetISSQN: s.nfse?.tpRetISSQN || '1',
+    }))).catch(console.error);
   }, [token]);
 
-  const clientsWithIssue = React.useMemo(() => {
+  const clientsWithIssue = useMemo(() => {
     const list = new Set<string>();
     nfses.forEach(n => {
-      let comp = '';
-      if (n.xml) {
-        const match = n.xml.match(/<Competencia>(.*?)<\/Competencia>/);
-        if (match && match[1].length >= 7) {
-          comp = match[1].substring(0, 7);
-        }
-      }
-      if (!comp && n.issueDate) {
-        comp = n.issueDate.substring(0, 7);
-      }
-      if (comp === formData.competencia) {
+      if (n.status !== 'canceled' && competenciaDe(n) === formData.competencia) {
         if (n.client) list.add(n.client);
         if (n.clientName) list.add(n.clientName);
       }
@@ -827,323 +305,85 @@ function BatchNfseModal({ onClose, onSuccess, token }: { onClose: () => void, on
 
   const handleValueBlur = async (clientId: string, value: number) => {
     const client = clients.find(c => c.id === clientId);
-    if (!client) return;
-    if (client.defaultNfseValue === value) return;
-    
+    if (!client || client.defaultNfseValue === value) return;
     setClients(prev => prev.map(c => c.id === clientId ? { ...c, defaultNfseValue: value } : c));
-
-    try {
-      await fetch(`/api/clients/${clientId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ ...client, defaultNfseValue: value })
-      });
-    } catch (error) {
-      console.error('Erro ao atualizar valor padrão do cliente', error);
-    }
+    apiFetch(token, `/api/clients/${clientId}`, { method: 'PUT', body: { ...client, defaultNfseValue: value } }).catch(console.error);
   };
 
   const handleSave = async () => {
     const clientsToEmit = clients.filter(c => selectedClients[c.id]);
-    if (clientsToEmit.length === 0) {
-      setError('Selecione ao menos um cliente');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setSuccess('');
-    setProgress(0);
-
-    let successes = 0;
-    let failures = 0;
-
+    if (clientsToEmit.length === 0) { setError('Selecione ao menos um cliente'); return; }
+    setLoading(true); setError(''); setSuccess(''); setProgress(0); setLog([]);
+    let successes = 0, failures = 0;
     for (let i = 0; i < clientsToEmit.length; i++) {
       const c = clientsToEmit[i];
       try {
-        const res = await fetch('/api/nfse/emitir', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            ...formData,
-            cliente: c.name,
-            valor: clientValues[c.id] || 0
-          })
-        });
-        if (res.ok) {
-          successes++;
-        } else {
-          failures++;
-        }
+        const r = await apiFetch<any>(token, '/api/nfse/emitir', { method: 'POST', body: { ...formData, clienteId: c.id, cliente: c.name, valor: clientValues[c.id] || 0 } });
+        successes++;
+        setLog(l => [...l, `✓ ${c.name}: ${r.message}`]);
       } catch (err: any) {
         failures++;
+        setLog(l => [...l, `✗ ${c.name}: ${err.message}`]);
       }
       setProgress(Math.round(((i + 1) / clientsToEmit.length) * 100));
-      
-      // Atraso de 2,5 segundos para evitar bloqueio por excesso de requisições no WebService
-      if (i < clientsToEmit.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 2500));
-      }
+      if (i < clientsToEmit.length - 1) await new Promise(resolve => setTimeout(resolve, 1500));
     }
-
-    if (failures === 0) {
-      setSuccess(`Lote emitido com sucesso! (${successes} notas)`);
-    } else {
-      setError(`Emissão finalizada: ${successes} com sucesso, ${failures} falhas.`);
-    }
-
+    if (failures === 0) setSuccess(`Lote emitido com sucesso! (${successes} notas)`);
+    else setError(`Emissão finalizada: ${successes} com sucesso, ${failures} falhas.`);
+    setLoading(false);
     onSuccess();
-    setTimeout(() => {
-      onClose();
-    }, 3000);
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-brand-surface w-full max-w-4xl rounded-2xl shadow-2xl border border-brand-border flex flex-col max-h-[90vh]">
-        <div className="p-4 px-6 border-b border-brand-border flex justify-between items-center shrink-0">
-          <h2 className="text-base font-bold text-brand-text flex items-center gap-2">
-            <Plus size={18} className="text-brand-green" /> Emitir NFS-e em Lote
-          </h2>
-          <button onClick={onClose} className="text-brand-muted hover:text-brand-text transition-colors">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
-          {error && (
-            <div className="mb-6 p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-[13px] flex items-center gap-2">
-              <AlertCircle size={16} /> {error}
-            </div>
-          )}
-          {success && (
-            <div className="mb-6 p-3 bg-brand-green/10 border border-brand-green/20 text-brand-green rounded-lg text-[13px] flex items-center gap-2">
-              <AlertCircle size={16} /> {success}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="flex flex-col gap-5">
-              <h3 className="text-sm font-bold text-brand-text border-b border-brand-border pb-2">Configurações Gerais</h3>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Item LC 116</label>
-                  <input 
-                    type="text" 
-                    value={formData.itemLc116}
-                    onChange={e => setFormData({...formData, itemLc116: e.target.value})}
-                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Alíquota (%)</label>
-                  <input 
-                    type="number" 
-                    step="0.01"
-                    value={formData.aliquota}
-                    onChange={e => setFormData({...formData, aliquota: Number(e.target.value)})}
-                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Código Tributação</label>
-                  <input 
-                    type="text" 
-                    value={formData.codigoTributacaoMunicipio}
-                    onChange={e => setFormData({...formData, codigoTributacaoMunicipio: e.target.value})}
-                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">CNAE</label>
-                  <input 
-                    type="text" 
-                    value={formData.cnae}
-                    onChange={e => setFormData({...formData, cnae: e.target.value})}
-                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Competência</label>
-                  <input 
-                    type="month" 
-                    value={formData.competencia}
-                    onChange={e => setFormData({...formData, competencia: e.target.value})}
-                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">ISS Retido</label>
-                  <select 
-                    value={formData.issRetido}
-                    onChange={e => setFormData({...formData, issRetido: Number(e.target.value)})}
-                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                  >
-                    <option value={1}>Sim (1)</option>
-                    <option value={2}>Não (2)</option>
-                  </select>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Regime Especial Trib.</label>
-                  <select 
-                    value={formData.regimeEspecialTributacao}
-                    onChange={e => setFormData({...formData, regimeEspecialTributacao: Number(e.target.value)})}
-                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                  >
-                    <option value={1}>1 - Microempresa Municipal</option>
-                    <option value={2}>2 - Estimativa</option>
-                    <option value={3}>3 - Sociedade de Profissionais</option>
-                    <option value={4}>4 - Cooperativa</option>
-                    <option value={5}>5 - MEI</option>
-                    <option value={6}>6 - ME ou EPP do Simples Nacional</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Optante Simples Nac.</label>
-                  <select 
-                    value={formData.optanteSimplesNacional}
-                    onChange={e => setFormData({...formData, optanteSimplesNacional: Number(e.target.value)})}
-                    className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                  >
-                    <option value={1}>Sim (1)</option>
-                    <option value={2}>Não (2)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Incentivo Fiscal</label>
-                <select 
-                  value={formData.incentivoFiscal}
-                  onChange={e => setFormData({...formData, incentivoFiscal: Number(e.target.value)})}
-                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                >
-                  <option value={1}>Sim (1)</option>
-                  <option value={2}>Não (2)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[12px] font-semibold text-brand-dim uppercase tracking-wide mb-1.5">Descrição do Serviço (Geral)</label>
-                <textarea 
-                  value={formData.descricao}
-                  onChange={e => setFormData({...formData, descricao: e.target.value})}
-                  rows={3}
-                  className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 px-3 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors resize-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col h-[500px]">
-              <h3 className="text-sm font-bold text-brand-text border-b border-brand-border pb-2 mb-4">Empresas e Valores</h3>
-              
-              <div className="flex items-center justify-between mb-3">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input 
-                    type="checkbox"
-                    className="accent-brand-green w-4 h-4"
-                    checked={clients.length > 0 && clients.every(c => selectedClients[c.id])}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      const sc: any = {};
-                      clients.forEach(c => sc[c.id] = checked);
-                      setSelectedClients(sc);
-                    }}
-                  />
-                  <span className="text-[13px] font-medium text-brand-text">Selecionar Todas</span>
-                </label>
-                <span className="text-[12px] text-brand-muted bg-brand-surface2 px-2 py-1 rounded-lg">
-                  {Object.values(selectedClients).filter(Boolean).length} selecionadas
-                </span>
-              </div>
-
-              <div className="flex-1 overflow-y-auto bg-brand-surface2/30 border border-brand-border rounded-lg p-2 custom-scrollbar">
-                {clients.map(client => {
-                  const hasIssue = clientsWithIssue.has(client.id) || clientsWithIssue.has(client.name);
-                  return (
-                  <div key={client.id} className={`flex items-center gap-3 p-2 rounded-lg transition-colors border-b border-brand-border/50 last:border-0 ${hasIssue ? 'bg-amber-500/10 hover:bg-amber-500/20' : 'hover:bg-brand-surface2'}`}>
-                    <input 
-                      type="checkbox"
-                      className="accent-brand-green w-4 h-4 shrink-0 mt-2"
-                      checked={selectedClients[client.id] || false}
-                      onChange={(e) => setSelectedClients({...selectedClients, [client.id]: e.target.checked})}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className={`text-[13px] font-medium truncate ${hasIssue ? 'text-amber-400' : 'text-brand-text'}`} title={client.name}>
-                        {client.name} {hasIssue && <span className="text-[10px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded ml-2">Nota Emitida</span>}
-                      </div>
-                      <div className={`text-[11px] font-mono ${hasIssue ? 'text-amber-500/70' : 'text-brand-muted'}`}>{client.cpfCnpj || client.cnpj}</div>
-                    </div>
-                    <div className="w-28 shrink-0">
-                      <div className="relative">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-brand-muted">R$</span>
-                        <input 
-                          type="number"
-                          value={clientValues[client.id] || 0}
-                          onChange={(e) => setClientValues({...clientValues, [client.id]: Number(e.target.value)})}
-                          onBlur={(e) => handleValueBlur(client.id, Number(e.target.value))}
-                          className="w-full bg-brand-surface border border-brand-border rounded py-1 pl-6 pr-2 text-[13px] text-brand-text outline-none focus:border-brand-green transition-colors"
-                          disabled={!selectedClients[client.id]}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )})}
-                {clients.length === 0 && (
-                  <div className="p-4 text-center text-brand-muted text-[13px]">
-                    Nenhum cliente cadastrado.
-                  </div>
-                )}
-              </div>
-            </div>
+    <Modal title="Emitir NFS-e em lote" onClose={() => !loading && onClose()} width="max-w-5xl"
+      footer={<>
+        {loading && <div className="mr-auto w-1/2 h-2 bg-brand-surface2 rounded-full overflow-hidden self-center"><div className="h-full bg-brand-green transition-all" style={{ width: `${progress}%` }} /></div>}
+        <Btn variant="ghost" onClick={onClose} disabled={loading}>Fechar</Btn>
+        <Btn variant="primary" loading={loading} icon={<Receipt size={15} />} onClick={handleSave} disabled={Object.values(selectedClients).filter(Boolean).length === 0}>Emitir lote</Btn>
+      </>}>
+      {error && <Alert type="error">{error}</Alert>}
+      {success && <Alert type="success">{success}</Alert>}
+      {log.length > 0 && <div className="flex flex-col gap-0.5 text-[12px] font-mono max-h-40 overflow-y-auto">{log.map((l, i) => <div key={i} className={l.startsWith('✓') ? 'text-brand-green' : 'text-red-400'}>{l}</div>)}</div>}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Competência"><Input type="month" value={formData.competencia} onChange={e => setFormData({ ...formData, competencia: e.target.value })} /></Field>
+            <Field label="Cód. tributação nacional"><Input value={formData.cTribNac} onChange={e => setFormData({ ...formData, cTribNac: e.target.value })} /></Field>
+            <Field label="Retenção do ISSQN"><Select value={formData.tpRetISSQN} onChange={e => setFormData({ ...formData, tpRetISSQN: e.target.value })} options={[{ value: '1', label: 'Não retido' }, { value: '2', label: 'Retido pelo tomador' }]} /></Field>
+            <Field label="Alíquota (%) opcional"><Input type="number" step="0.01" value={formData.pAliq} onChange={e => setFormData({ ...formData, pAliq: e.target.value })} /></Field>
           </div>
+          <Field label="Descrição do serviço"><Textarea rows={5} value={formData.descricao} onChange={e => setFormData({ ...formData, descricao: e.target.value })} /></Field>
         </div>
-
-        <div className="p-4 px-6 border-t border-brand-border bg-brand-surface2/50 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
-          <div className="w-full sm:w-1/2">
-            {loading && (
-              <div className="flex flex-col gap-1 w-full">
-                <div className="flex justify-between text-[11px] text-brand-muted font-semibold uppercase tracking-wide">
-                  <span>Progresso</span>
-                  <span>{progress}%</span>
-                </div>
-                <div className="w-full h-2 bg-brand-surface border border-brand-border rounded-full overflow-hidden">
-                  <div className="h-full bg-brand-green transition-all duration-300" style={{ width: `${progress}%` }}></div>
-                </div>
-              </div>
-            )}
+        <div className="flex flex-col h-[420px]">
+          <div className="flex items-center justify-between mb-2">
+            <label className="flex items-center gap-2 cursor-pointer text-[13px]">
+              <input type="checkbox" className="accent-brand-green w-4 h-4" checked={clients.length > 0 && clients.every(c => selectedClients[c.id])} onChange={e => { const sc: any = {}; clients.forEach(c => sc[c.id] = e.target.checked); setSelectedClients(sc); }} />
+              Selecionar todas
+            </label>
+            <span className="text-[12px] text-brand-muted">{Object.values(selectedClients).filter(Boolean).length} selecionadas</span>
           </div>
-          <div className="flex justify-end gap-3 w-full sm:w-auto">
-            <button onClick={onClose} disabled={loading} className="px-4 py-2 text-[13px] font-semibold text-brand-muted hover:text-brand-text transition-colors disabled:opacity-50">
-              Cancelar
-            </button>
-            <button 
-              onClick={handleSave}
-              disabled={loading || Object.values(selectedClients).filter(Boolean).length === 0}
-              className="flex items-center gap-2 px-5 py-2 bg-brand-green hover:bg-brand-green-dim text-black rounded-lg text-[13px] font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? <Loader2 size={16} className="animate-spin" /> : <Receipt size={16} strokeWidth={2.5} />}
-              Emitir Lote
-            </button>
+          <div className="flex-1 overflow-y-auto bg-brand-surface2/30 border border-brand-border rounded-lg p-2">
+            {clients.map(client => {
+              const hasIssue = clientsWithIssue.has(client.id) || clientsWithIssue.has(client.name);
+              return (
+                <div key={client.id} className={`flex items-center gap-3 p-2 rounded-lg border-b border-brand-border/50 last:border-0 ${hasIssue ? 'bg-amber-500/10' : 'hover:bg-brand-surface2'}`}>
+                  <input type="checkbox" className="accent-brand-green w-4 h-4 shrink-0" checked={selectedClients[client.id] || false} onChange={e => setSelectedClients({ ...selectedClients, [client.id]: e.target.checked })} />
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-[13px] font-medium truncate ${hasIssue ? 'text-amber-400' : 'text-brand-text'}`} title={client.name}>{client.name} {hasIssue && <span className="text-[10px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded ml-1">Nota emitida</span>}</div>
+                    <div className="text-[11px] font-mono text-brand-muted">{fmtDoc(client.cpfCnpj || client.cnpj)}</div>
+                  </div>
+                  <div className="w-28 shrink-0 relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-brand-muted">R$</span>
+                    <input type="number" value={clientValues[client.id] || 0} onChange={e => setClientValues({ ...clientValues, [client.id]: Number(e.target.value) })} onBlur={e => handleValueBlur(client.id, Number(e.target.value))} disabled={!selectedClients[client.id]}
+                      className="w-full bg-brand-surface border border-brand-border rounded py-1 pl-6 pr-2 text-[13px] text-brand-text outline-none focus:border-brand-green" />
+                  </div>
+                </div>
+              );
+            })}
+            {clients.length === 0 && <div className="p-4 text-center text-brand-muted text-[13px]">Nenhum cliente cadastrado.</div>}
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

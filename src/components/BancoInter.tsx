@@ -1,135 +1,71 @@
-import React, { useState, useEffect } from 'react';
-import { Building2, Save, Loader2, Check, AlertCircle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { LayoutDashboard, ArrowDownToLine, ScrollText, FileText, QrCode, Repeat, Send, Webhook, Settings } from 'lucide-react';
+import { apiFetch } from '../lib/api';
+import { Tabs, Alert } from './ui';
+import InterVisaoGeral from './inter/InterVisaoGeral';
+import InterEntradas from './inter/InterEntradas';
+import InterExtrato from './inter/InterExtrato';
+import InterCobrancas from './inter/InterCobrancas';
+import InterPix from './inter/InterPix';
+import InterPixAutomatico from './inter/InterPixAutomatico';
+import InterPagamentos from './inter/InterPagamentos';
+import InterWebhooks from './inter/InterWebhooks';
+import InterConfig from './inter/InterConfig';
+
+const TABS = [
+  { id: 'visao', label: 'Visão geral', icon: LayoutDashboard },
+  { id: 'entradas', label: 'Entradas → NFS-e', icon: ArrowDownToLine },
+  { id: 'extrato', label: 'Extrato e saldo', icon: ScrollText },
+  { id: 'cobrancas', label: 'Boletos / Cobranças', icon: FileText },
+  { id: 'pix', label: 'Pix', icon: QrCode },
+  { id: 'pixauto', label: 'Pix Automático', icon: Repeat },
+  { id: 'pagamentos', label: 'Pagamentos', icon: Send },
+  { id: 'webhooks', label: 'Webhooks', icon: Webhook },
+  { id: 'config', label: 'Configuração', icon: Settings },
+];
 
 export default function BancoInter({ token }: { token: string }) {
-  const [interSettings, setInterSettings] = useState({
-    interClientId: '',
-    interClientSecret: '',
-    interContaCorrente: ''
+  const [tab, setTab] = useState(() => {
+    try { return localStorage.getItem('vc_inter_tab') || 'visao'; } catch { return 'visao'; }
   });
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
+  const [status, setStatus] = useState<any>(null);
 
-  useEffect(() => {
-    fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
-      .then(data => {
-        if (data) {
-          setInterSettings({
-            interClientId: data.interClientId || '',
-            interClientSecret: data.interClientSecret || '',
-            interContaCorrente: data.interContaCorrente || ''
-          });
-        }
-      })
-      .catch(console.error);
-  }, [token]);
+  const loadStatus = () => apiFetch(token, '/api/inter/status').then(setStatus).catch(() => setStatus(null));
+  useEffect(() => { loadStatus(); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(interSettings)
-      });
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        setSuccess('Configurações do Banco Inter salvas com sucesso!');
-      } else {
-        setError(data.error || 'Erro ao salvar configurações');
-      }
-    } catch (err) {
-      setError('Erro de conexão ao servidor');
-    } finally {
-      setLoading(false);
-    }
+  const change = (id: string) => {
+    setTab(id);
+    try { localStorage.setItem('vc_inter_tab', id); } catch { /* ignore */ }
   };
 
+  const naoConfigurado = status && !status.configured && tab !== 'config';
+
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-2xl mx-auto">
-      <div className="flex items-center gap-3 mb-8">
-        <div className="w-10 h-10 rounded-xl bg-[#FF7A00]/10 flex items-center justify-center text-[#FF7A00]">
-          <Building2 size={20} />
-        </div>
+    <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-[#FF7A00]/10 flex items-center justify-center text-[#FF7A00] font-bold text-lg">i</div>
         <div>
-          <h2 className="text-xl font-bold text-brand-text">Banco Inter</h2>
-          <p className="text-sm text-brand-muted mt-1">Configuração da API de Cobrança</p>
+          <h2 className="text-lg font-bold text-brand-text">Banco Inter Empresas</h2>
+          <p className="text-[12.5px] text-brand-muted">
+            {status?.configured
+              ? <>Conectado · {status.ambiente === 'sandbox' ? 'Sandbox' : 'Produção'}{status.cert?.validTo ? ` · certificado válido até ${new Date(status.cert.validTo).toLocaleDateString('pt-BR')}` : ''}</>
+              : 'Integração não configurada'}
+          </p>
         </div>
       </div>
-
-      <div className="bg-brand-surface border border-brand-border rounded-xl p-6">
-        <form onSubmit={handleSave} className="space-y-6">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-brand-dim mb-1.5">Client ID</label>
-              <input
-                type="text"
-                value={interSettings.interClientId}
-                onChange={e => setInterSettings({...interSettings, interClientId: e.target.value})}
-                className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2.5 px-4 text-brand-text outline-none focus:border-[#FF7A00] transition-colors"
-                placeholder="Insira o Client ID"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-brand-dim mb-1.5">Client Secret</label>
-              <input
-                type="password"
-                value={interSettings.interClientSecret}
-                onChange={e => setInterSettings({...interSettings, interClientSecret: e.target.value})}
-                className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2.5 px-4 text-brand-text outline-none focus:border-[#FF7A00] transition-colors"
-                placeholder="Insira o Client Secret"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-brand-dim mb-1.5">Conta Corrente</label>
-              <input
-                type="text"
-                value={interSettings.interContaCorrente}
-                onChange={e => setInterSettings({...interSettings, interContaCorrente: e.target.value})}
-                className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2.5 px-4 text-brand-text outline-none focus:border-[#FF7A00] transition-colors"
-                placeholder="Ex: 1234567-8"
-              />
-            </div>
-          </div>
-
-          {error && (
-            <div className="flex items-center gap-2 text-red-400 bg-red-400/10 p-3 rounded-lg text-sm">
-              <AlertCircle size={16} />
-              {error}
-            </div>
-          )}
-
-          {success && (
-            <div className="flex items-center gap-2 text-brand-green bg-brand-green/10 p-3 rounded-lg text-sm">
-              <Check size={16} />
-              {success}
-            </div>
-          )}
-
-          <div className="pt-4 border-t border-brand-border">
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-[#FF7A00] hover:bg-[#FF7A00]/90 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-            >
-              {loading ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-              {loading ? 'Salvando...' : 'Salvar Configurações'}
-            </button>
-          </div>
-        </form>
-      </div>
+      <Tabs tabs={TABS} active={tab} onChange={change} />
+      {naoConfigurado && (
+        <Alert type="warn">Configure o Client ID, Client Secret e o certificado da aplicação na aba Configuração para usar a integração.</Alert>
+      )}
+      {tab === 'visao' && <InterVisaoGeral token={token} onNavigate={change} />}
+      {tab === 'entradas' && <InterEntradas token={token} />}
+      {tab === 'extrato' && <InterExtrato token={token} />}
+      {tab === 'cobrancas' && <InterCobrancas token={token} />}
+      {tab === 'pix' && <InterPix token={token} />}
+      {tab === 'pixauto' && <InterPixAutomatico token={token} />}
+      {tab === 'pagamentos' && <InterPagamentos token={token} permitirSaidas={!!status?.permitirSaidas} onGoConfig={() => change('config')} />}
+      {tab === 'webhooks' && <InterWebhooks token={token} />}
+      {tab === 'config' && <InterConfig token={token} onSaved={loadStatus} />}
     </div>
   );
 }

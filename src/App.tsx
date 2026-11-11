@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Calculator, LayoutDashboard, FileText, Users, Building2, Globe, 
   Settings, BarChart2, Search, Bell, Plus, TrendingUp, TrendingDown, 
-  AlertCircle, Clock, Eye, Mail, Receipt, X, Check, LogOut
+  AlertCircle, Clock, Eye, Mail, Receipt, LogOut, Loader2
 } from 'lucide-react';
 import Login from './components/Login';
 import Configuracoes from './components/Configuracoes';
@@ -15,8 +15,10 @@ import Clientes from './components/Clientes';
 import Cobrancas from './components/Cobrancas';
 import Nfse from './components/Nfse';
 import BancoInter from './components/BancoInter';
-import WebIss from './components/WebIss';
 import Relatorios from './components/Relatorios';
+import NovaCobrancaModal from './components/NovaCobrancaModal';
+import NfseEmitirModal from './components/NfseEmitirModal';
+import { enviarEmailCobranca, STATUS_COBRANCA } from './components/Cobrancas';
 
 // --- DATA ---
 const activities: any[] = [];
@@ -73,8 +75,6 @@ export default function App() {
             <Nfse token={token} refreshKey={refreshKey} setRefreshKey={setRefreshKey} />
           ) : activeTab === 'Banco Inter' ? (
             <BancoInter token={token} />
-          ) : activeTab === 'WebISS' ? (
-            <WebIss token={token} />
           ) : activeTab === 'Relatórios' ? (
             <Relatorios token={token} />
           ) : (
@@ -84,7 +84,7 @@ export default function App() {
           )}
         </main>
       </div>
-      {isModalOpen && <NewChargeModal onClose={() => setIsModalOpen(false)} onSuccess={() => setRefreshKey(k => k + 1)} token={token} />}
+      {isModalOpen && <NovaCobrancaModal onClose={() => setIsModalOpen(false)} onSuccess={() => setRefreshKey(k => k + 1)} token={token} />}
     </div>
   );
 }
@@ -98,7 +98,6 @@ function Sidebar({ activeTab, setActiveTab, onLogout }: { activeTab: string, set
     { id: 'NFS-e', icon: Receipt, label: 'NFS-e' },
     { label: 'Integrações', isLabel: true },
     { id: 'Banco Inter', icon: Building2, label: 'Banco Inter' },
-    { id: 'WebISS', icon: Globe, label: 'WebISS / NFS-e' },
     { label: 'Sistema', isLabel: true },
     { id: 'Configurações', icon: Settings, label: 'Configurações' },
     { id: 'Relatórios', icon: BarChart2, label: 'Relatórios' },
@@ -134,7 +133,7 @@ function Sidebar({ activeTab, setActiveTab, onLogout }: { activeTab: string, set
               {isActive && <div className="absolute left-[-12px] top-1/2 -translate-y-1/2 w-[3px] h-5 bg-brand-green rounded-r-sm" />}
               <Icon size={16} strokeWidth={2} />
               {item.label}
-              {item.badge && <span className="ml-auto bg-brand-green text-black text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-tight">{item.badge}</span>}
+              
             </div>
           );
         })}
@@ -161,9 +160,8 @@ function Topbar({ title, onNew }: { title: string, onNew: () => void }) {
     'Dashboard': 'Visão geral de cobranças e integrações',
     'Cobranças': 'Gerencie todas as cobranças e boletos',
     'Clientes': 'Base de clientes cadastrados',
-    'NFS-e': 'Notas fiscais eletrônicas emitidas',
-    'Banco Inter': 'Configurações da API de cobranças',
-    'WebISS': 'Web service ABRASF v2.04 · SOAP/XML',
+    'NFS-e': 'Notas fiscais de serviço — padrão nacional',
+    'Banco Inter': 'Saldo, extrato, boletos, Pix, pagamentos e NFS-e das entradas',
     'Configurações': 'Ajustes do sistema',
     'Relatórios': 'Métricas e resultados'
   };
@@ -225,45 +223,23 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
   }, [token, refreshKey]);
 
   const [sendingEmail, setSendingEmail] = useState('');
+  const [emitirNfse, setEmitirNfse] = useState<any>(null);
   const handleSendEmail = async (c: any) => {
-    if (!c.clientEmail) {
-      alert('Este cliente não possui e-mail cadastrado. Atualize o cadastro do cliente antes de enviar.');
-      return;
-    }
     setSendingEmail(c.id);
     try {
-      const emailRes = await fetch('/api/send-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          to: c.clientEmail,
-          subject: `Cobrança - ${c.clientName || 'Cliente'} - Vírgula Contábil`,
-          messageBody: `Olá ${c.clientName ? c.clientName.split(' ')[0] : ''},\n\nSegue em anexo a sua cobrança com vencimento para ${c.due.split('-').reverse().join('/')} no valor de R$ ${c.value.toLocaleString('pt-BR', {minimumFractionDigits:2})}.\n\nSe tiver qualquer dúvida, estamos à disposição.`,
-          documents: [
-            { docName: `Boleto Bancário`, category: 'Boleto', dueDate: c.due, competence: c.due.substring(0, 7) },
-            ...(c.nfse ? [{ docName: `Nota Fiscal`, category: 'NFS-e', nfseId: c.nfse, dueDate: c.due, competence: c.due.substring(0, 7) }] : [])
-          ]
-        })
-      });
-      const data = await emailRes.json();
-      if (emailRes.ok) {
-        alert('E-mail enviado com sucesso!');
-      } else {
-        alert(`Erro ao enviar e-mail: ${data.error}`);
-      }
-    } catch (err) {
-      alert('Erro de conexão ao enviar e-mail');
+      await enviarEmailCobranca(token, c);
+      alert('E-mail enviado com sucesso!');
+    } catch (err: any) {
+      alert(err.message || 'Erro ao enviar e-mail');
     }
     setSendingEmail('');
   };
 
-  const received = cobrancas.filter(c => c.status === 'paid').reduce((acc, c) => acc + c.value, 0);
-  const pending = cobrancas.filter(c => c.status === 'pending').reduce((acc, c) => acc + c.value, 0);
-  const overdue = cobrancas.filter(c => c.status === 'overdue').reduce((acc, c) => acc + c.value, 0);
-  const nfseIssued = nfses.length;
+  const mesAtual = new Date().toISOString().slice(0, 7);
+  const received = cobrancas.filter(c => c.status === 'paid' && String(c.inter?.dataSituacao || c.due || '').slice(0, 7) === mesAtual).reduce((acc, c) => acc + Number(c.inter?.valorTotalRecebido || c.value || 0), 0);
+  const pending = cobrancas.filter(c => c.status === 'pending').reduce((acc, c) => acc + Number(c.value || 0), 0);
+  const overdue = cobrancas.filter(c => c.status === 'overdue').reduce((acc, c) => acc + Number(c.value || 0), 0);
+  const nfseIssued = nfses.filter(n => n.status !== 'canceled' && String(n.issueDate || '').slice(0, 7) === mesAtual).length;
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -300,7 +276,7 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
           value={nfseIssued.toString()} 
           icon={Receipt} 
           color="blue" 
-          delta={`Mês atual · ${cobrancas.filter(c => c.nfse === 'pend').length} pendentes`} 
+          delta={`Mês atual · ${cobrancas.filter(c => c.emitirNfseAoPagar && !c.nfse).length} aguardando pagamento`} 
           deltaType="neutral" 
         />
       </div>
@@ -314,13 +290,13 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
               <div className="text-[12px] text-brand-muted mt-0.5">Últimas movimentações</div>
             </div>
             <div className="flex gap-1 bg-brand-surface2 rounded-lg p-1">
-              {['all', 'paid', 'pending', 'overdue'].map(f => (
+              {['all', 'paid', 'pending', 'overdue', 'canceled'].map(f => (
                 <button 
                   key={f}
                   onClick={() => setFilter(f)}
                   className={`px-3 py-1.5 rounded-md text-[12px] font-medium transition-all ${filter === f ? 'bg-brand-surface text-brand-green shadow-sm' : 'text-brand-muted hover:text-brand-text'}`}
                 >
-                  {f === 'all' ? 'Todas' : f === 'paid' ? 'Pagas' : f === 'pending' ? 'Pendentes' : 'Em atraso'}
+                  {f === 'all' ? 'Todas' : f === 'paid' ? 'Pagas' : f === 'pending' ? 'Pendentes' : f === 'overdue' ? 'Em atraso' : 'Canceladas'}
                 </button>
               ))}
             </div>
@@ -346,7 +322,7 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
                     </td>
                   </tr>
                 ) : cobrancas.filter(c => filter === 'all' || c.status === filter).map((c) => {
-                  const client = clients.find(cl => cl.id === c.client) || { name: 'Cliente Desconhecido', init: '?', color: '#666' };
+                  const client = clients.find(cl => cl.id === c.client || cl.name === c.clientName) || { name: c.clientName || 'Cliente', init: (c.clientName || '?').charAt(0), color: '#666' };
                   return (
                     <tr key={c.id} className="hover:bg-brand-surface2 group border-b border-white/5 last:border-0">
                       <td className="px-4 py-3">
@@ -360,8 +336,8 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-mono text-[13px] font-medium">R$ {(c.value).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
-                      <td className="px-4 py-3 text-[13px] text-brand-muted">{c.due.split('-').reverse().join('/')}</td>
+                      <td className="px-4 py-3 font-mono text-[13px] font-medium">R$ {Number(c.value || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+                      <td className="px-4 py-3 text-[13px] text-brand-muted">{String(c.due || '').split('-').reverse().join('/')}</td>
                       <td className="px-4 py-3">
                         <StatusBadge status={c.status} />
                       </td>
@@ -377,7 +353,7 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
                           <button className="w-7 h-7 rounded-md border border-brand-border flex items-center justify-center text-brand-muted hover:bg-brand-surface3 hover:text-brand-text hover:border-brand-border-green transition-colors" title="Ver detalhes">
                             <Eye size={13} strokeWidth={2.5} />
                           </button>
-                          <button className="w-7 h-7 rounded-md border border-brand-border flex items-center justify-center text-brand-muted hover:bg-brand-surface3 hover:text-brand-text hover:border-brand-border-green transition-colors" title="Emitir NFS-e">
+                          <button onClick={() => !c.nfse && setEmitirNfse(c)} disabled={!!c.nfse} className="w-7 h-7 rounded-md border border-brand-border flex items-center justify-center text-brand-muted hover:bg-brand-surface3 hover:text-brand-text hover:border-brand-border-green transition-colors disabled:opacity-40" title={c.nfse ? 'NFS-e já emitida' : 'Emitir NFS-e'}>
                             <Receipt size={13} strokeWidth={2.5} />
                           </button>
                           <button 
@@ -405,10 +381,10 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
               <div className="w-8 h-8 rounded-lg bg-[#FF8C00] text-white flex items-center justify-center font-bold text-sm">i</div>
               <div>
                 <div className="text-[13px] font-bold text-brand-text">Banco Inter</div>
-                <div className="text-[11px] text-brand-muted mt-0.5">API de Cobranças v2</div>
+                <div className="text-[11px] text-brand-muted mt-0.5">API PJ · OAuth2 + mTLS</div>
               </div>
               <div className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-brand-dim">
-                {sysSettings?.interClientId ? (
+                {sysSettings?.interConfigured ? (
                   <><div className="w-1.5 h-1.5 rounded-full bg-brand-green" /> Conectado</>
                 ) : (
                   <><div className="w-1.5 h-1.5 rounded-full bg-brand-dim" /> Desconectado</>
@@ -416,10 +392,10 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
               </div>
             </div>
             <div className="p-3.5 px-4 text-[12.5px]">
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Client ID</span><span className="text-brand-text font-medium font-mono">{sysSettings?.interClientId ? 'Configurado' : 'Não configurado'}</span></div>
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Cert. Digital</span><span className="text-brand-dim font-medium">Não integrado local (Simulado)</span></div>
-              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Boletos</span><span className="text-brand-text font-medium">{cobrancas.length} gerados</span></div>
-              <div className="flex justify-between py-1.5"><span className="text-brand-muted">Webhook</span><span className="text-brand-dim font-medium">{sysSettings?.interClientId ? 'Ativo' : 'Inativo'}</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Credenciais</span><span className="text-brand-text font-medium">{sysSettings?.interClientId ? 'Configuradas' : 'Não configuradas'}</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Certificado API</span><span className="text-brand-text font-medium">{sysSettings?.interHasCert ? 'Instalado' : 'Não instalado'}</span></div>
+              <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Cobranças com boleto</span><span className="text-brand-text font-medium">{cobrancas.filter(c => c.inter?.codigoSolicitacao).length}</span></div>
+              <div className="flex justify-between py-1.5"><span className="text-brand-muted">Saídas (pagamentos/Pix)</span><span className="text-brand-dim font-medium">{sysSettings?.interPermitirSaidas ? 'Permitidas' : 'Bloqueadas'}</span></div>
             </div>
           </div>
 
@@ -428,8 +404,8 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
             <div className="p-3.5 px-4 border-b border-brand-border flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-brand-green text-black flex items-center justify-center font-bold text-[11px] tracking-tighter">NFS</div>
               <div>
-                <div className="text-[13px] font-bold text-brand-text">WebISS / NFS-e</div>
-                <div className="text-[11px] text-brand-muted mt-0.5">ABRASF v2.04 · SOAP/XML</div>
+                <div className="text-[13px] font-bold text-brand-text">NFS-e {sysSettings?.nfse?.provedor === 'webiss' ? 'WebISS' : 'Nacional'}</div>
+                <div className="text-[11px] text-brand-muted mt-0.5">{sysSettings?.nfse?.provedor === 'webiss' ? 'ABRASF · SOAP/XML' : `Sefin Nacional · DPS v1.01 · ${sysSettings?.nfse?.ambiente === '2' ? 'produção restrita' : 'produção'}`}</div>
               </div>
               <div className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-brand-dim">
                 {sysSettings?.hasCertificate ? (
@@ -443,18 +419,18 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
               <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Município</span><span className="text-brand-text font-medium">{sysSettings?.codigoMunicipio || '2929305'}</span></div>
               <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">CNPJ Prestador</span><span className="text-brand-text font-medium font-mono">{sysSettings?.prestadorCnpj || 'Configurado'}</span></div>
               <div className="flex justify-between py-1.5 border-b border-white/5"><span className="text-brand-muted">Cert. ICP-Brasil</span><span className="text-brand-dim font-medium">{sysSettings?.hasCertificate ? 'Instalado' : 'Não instalado'}</span></div>
-              <div className="flex justify-between py-1.5"><span className="text-brand-muted">Schema</span><span className="text-brand-text font-medium">nfse.xsd v2.04</span></div>
+              <div className="flex justify-between py-1.5"><span className="text-brand-muted">Próxima DPS</span><span className="text-brand-text font-medium font-mono">{sysSettings?.nfse ? `série ${sysSettings.nfse.serie} nº ${sysSettings.nfse.proximoNumero}` : '—'}</span></div>
             </div>
             <div className="p-3 px-4 pb-4 bg-brand-surface2/30">
               <div className="text-[11px] font-semibold text-brand-muted uppercase tracking-wide mb-2.5">Fluxo automático pagamento → NFS-e</div>
               <div className="flex flex-col gap-0.5">
-                <FlowStep num="✓" text="Boleto gerado (Inter API)" state="done" />
+                <FlowStep num="1" text="Boleto com Pix emitido (Inter Cobrança v3)" state="done" />
                 <div className="w-px h-2 bg-brand-border ml-[10px]" />
-                <FlowStep num="✓" text="Pagamento confirmado (Webhook)" state="done" />
+                <FlowStep num="2" text="Pagamento confirmado (webhook ou extrato)" state="done" />
                 <div className="w-px h-2 bg-brand-border ml-[10px]" />
-                <FlowStep num="→" text="RPS enviado ao WebISS (SOAP)" state="active" />
+                <FlowStep num="3" text="DPS assinada enviada à Sefin Nacional" state="active" />
                 <div className="w-px h-2 bg-brand-border ml-[10px]" />
-                <FlowStep num="4" text="NFS-e emitida e arquivada" state="next" />
+                <FlowStep num="4" text="NFS-e autorizada, DANFSe e e-mail" state="next" />
               </div>
             </div>
           </div>
@@ -480,6 +456,16 @@ function Dashboard({ filter, setFilter, token, refreshKey }: { filter: string, s
           </div>
         </div>
       </div>
+
+      {emitirNfse && (
+        <NfseEmitirModal
+          token={token}
+          titulo="Emitir NFS-e da cobrança"
+          inicial={{ clienteId: emitirNfse.client, cliente: emitirNfse.clientName, valor: Number(emitirNfse.inter?.valorTotalRecebido) || emitirNfse.value, competencia: String(emitirNfse.due || '').slice(0, 7) }}
+          origem={{ tipo: 'cobranca', cobrancaId: emitirNfse.id, codigoSolicitacao: emitirNfse.inter?.codigoSolicitacao }}
+          onClose={() => setEmitirNfse(null)}
+        />
+      )}
 
       {/* Activity Log */}
       <div className="bg-brand-surface border border-brand-border rounded-xl overflow-hidden mt-2">
@@ -549,9 +535,10 @@ function StatusBadge({ status }: { status: string }) {
     paid: { label: 'Pago', bg: 'rgba(16,185,129,0.12)', color: 'var(--color-brand-green)' },
     pending: { label: 'Pendente', bg: 'rgba(245,158,11,0.12)', color: '#f59e0b' },
     overdue: { label: 'Em atraso', bg: 'rgba(239,68,68,0.12)', color: '#ef4444' },
+    canceled: { label: 'Cancelado', bg: 'rgba(125,133,144,0.12)', color: 'var(--color-brand-muted)' },
     draft: { label: 'Rascunho', bg: 'rgba(125,133,144,0.12)', color: 'var(--color-brand-muted)' }
   };
-  const s = map[status];
+  const s = map[status] || { label: STATUS_COBRANCA[status]?.label || status, bg: 'rgba(125,133,144,0.12)', color: 'var(--color-brand-muted)' };
   return (
     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold" style={{ backgroundColor: s.bg, color: s.color }}>
       <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'currentColor' }} />
@@ -573,297 +560,6 @@ function FlowStep({ num, text, state }: { num: string, text: string, state: stri
         {num}
       </div>
       <div className={`text-[12.5px] font-medium ${s.textColor}`}>{text}</div>
-    </div>
-  );
-}
-
-function NewChargeModal({ onClose, onSuccess, token }: { onClose: () => void, onSuccess: () => void, token: string }) {
-  const [toggles, setToggles] = useState({ boleto: true, nfse: true, email: false });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [xmlPreview, setXmlPreview] = useState('');
-  const [clients, setClients] = useState<any[]>([]);
-
-  const [formData, setFormData] = useState({
-    cliente: '',
-    valor: 300,
-    vencimento: new Date(Date.now() + 30*86400000).toISOString().split('T')[0],
-    descricao: 'Prestação de serviços contábeis, compreendendo escrituração contábil e fiscal, apuração de tributos, elaboração e entrega de obrigações acessórias, assessoria e consultoria contábil, referente ao período de xx/202x.',
-    itemLc116: '',
-    aliquota: 0,
-    codigoTributacaoMunicipio: '',
-    cnae: '',
-    competencia: new Date().toISOString().slice(0, 7),
-    issRetido: 2
-  });
-
-  useEffect(() => {
-    fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
-      .then(data => setClients(data))
-      .catch(console.error);
-
-    fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-      .then(res => res.json())
-      .then(data => {
-        setFormData(prev => ({
-          ...prev,
-          itemLc116: data.itemLc116 || '17.19',
-          aliquota: data.aliquota || 3.00,
-          codigoTributacaoMunicipio: data.codigoTributacaoMunicipio || '',
-          cnae: data.cnae || ''
-        }));
-      })
-      .catch(console.error);
-  }, [token]);
-
-  const handleSave = async () => {
-    if (!formData.cliente) {
-      setError('Selecione um cliente');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setSuccess('');
-    setXmlPreview('');
-
-    try {
-      const res = await fetch('/api/cobrancas', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ ...formData, toggles })
-      });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        if (data.xmlPreview) {
-          setXmlPreview(data.xmlPreview);
-        }
-        throw new Error(data.error || 'Erro ao criar cobrança');
-      }
-
-      setSuccess(data.message || 'Cobrança criada com sucesso!');
-      onSuccess();
-      setTimeout(() => {
-        onClose();
-      }, 2000);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200" onClick={onClose}>
-      <div className="bg-brand-surface border border-brand-border-green rounded-2xl w-[600px] max-w-[95vw] shadow-[0_24px_80px_rgba(0,0,0,0.5)] animate-in zoom-in-95 slide-in-from-bottom-4 duration-200 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-        <div className="p-5 px-6 border-b border-brand-border flex items-center gap-3 shrink-0">
-          <div className="w-9 h-9 rounded-xl bg-brand-green-subtle border border-brand-border-green flex items-center justify-center text-brand-green">
-            <Plus size={18} strokeWidth={2.5} />
-          </div>
-          <div>
-            <h2 className="text-base font-bold text-brand-text">Nova Cobrança</h2>
-            <div className="text-xs text-brand-muted mt-0.5">Gera boleto Inter + NFS-e automaticamente ao pagar</div>
-          </div>
-          <button onClick={onClose} className="ml-auto p-1 text-brand-muted hover:text-brand-text hover:bg-brand-surface2 rounded-md transition-colors">
-            <X size={18} strokeWidth={2.5} />
-          </button>
-        </div>
-        
-        <div className="p-5 px-6 overflow-y-auto flex-1">
-          {error && (
-            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex flex-col gap-2">
-              <div className="text-red-500 text-[13px] font-medium flex items-center gap-2">
-                <AlertCircle size={16} />
-                {error}
-              </div>
-              {xmlPreview && (
-                <div className="mt-2">
-                  <div className="text-[11px] text-brand-muted mb-1">Conteúdo XML Retornado/Gerado:</div>
-                  <pre className="bg-black/50 p-3 rounded border border-brand-border text-[10px] text-brand-dim overflow-x-auto whitespace-pre-wrap">
-                    {xmlPreview}
-                  </pre>
-                </div>
-              )}
-            </div>
-          )}
-
-          {success && (
-            <div className="mb-4 p-3 bg-brand-green/10 border border-brand-green/30 rounded-lg text-brand-green text-[13px] font-medium flex items-center gap-2">
-              <Check size={16} />
-              {success}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3.5">
-            <div className="col-span-2 flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Cliente</label>
-              <select 
-                value={formData.cliente}
-                onChange={e => setFormData({...formData, cliente: e.target.value})}
-                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full"
-              >
-                <option value="">Selecione o cliente</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.name}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Valor (R$)</label>
-              <input 
-                type="number" 
-                value={formData.valor}
-                onChange={e => setFormData({...formData, valor: parseFloat(e.target.value) || 0})}
-                placeholder="0.00" 
-                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full" 
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Vencimento</label>
-              <input 
-                type="date" 
-                value={formData.vencimento}
-                onChange={e => setFormData({...formData, vencimento: e.target.value})}
-                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full [color-scheme:dark]" 
-              />
-            </div>
-            <div className="col-span-2 flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Descrição do serviço</label>
-              <textarea 
-                value={formData.descricao}
-                onChange={e => setFormData({...formData, descricao: e.target.value})}
-                placeholder="Ex.: Honorários contábeis referente à competência Janeiro/2025" 
-                className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full min-h-[70px] resize-y" 
-              />
-            </div>
-            <div className="col-span-2 grid grid-cols-2 gap-3.5">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Item LC 116/03</label>
-                <input 
-                  type="text" 
-                  value={formData.itemLc116}
-                  onChange={e => setFormData({...formData, itemLc116: e.target.value})}
-                  placeholder="Ex: 17.19"
-                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full" 
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Alíquota ISS (%)</label>
-                <input 
-                  type="number" 
-                  value={formData.aliquota}
-                  onChange={e => setFormData({...formData, aliquota: parseFloat(e.target.value) || 0})}
-                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full" 
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Cód. Tributação</label>
-                <input 
-                  type="text" 
-                  value={formData.codigoTributacaoMunicipio}
-                  onChange={e => setFormData({...formData, codigoTributacaoMunicipio: e.target.value})}
-                  placeholder="Ex: 692060100"
-                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full" 
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">CNAE</label>
-                <input 
-                  type="text" 
-                  value={formData.cnae}
-                  onChange={e => setFormData({...formData, cnae: e.target.value})}
-                  placeholder="Ex: 6920601"
-                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full" 
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">Competência</label>
-                <input 
-                  type="month" 
-                  value={formData.competencia}
-                  onChange={e => setFormData({...formData, competencia: e.target.value})}
-                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full [color-scheme:dark]" 
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-brand-muted uppercase tracking-wide">ISS Retido</label>
-                <select 
-                  value={formData.issRetido}
-                  onChange={e => setFormData({...formData, issRetido: Number(e.target.value)})}
-                  className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-2.5 text-[13.5px] text-brand-text outline-none focus:border-brand-green transition-colors w-full"
-                >
-                  <option value={1}>Sim (1)</option>
-                  <option value={2}>Não (2)</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5 my-4 text-[11px] font-semibold text-brand-dim uppercase tracking-wide">
-            <div className="flex-1 h-px bg-brand-border" />
-            Automações
-            <div className="flex-1 h-px bg-brand-border" />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <ToggleRow 
-              label="Gerar boleto (Banco Inter)" 
-              desc="Emite o boleto via API Inter ao salvar" 
-              isOn={toggles.boleto} 
-              onToggle={() => setToggles(p => ({...p, boleto: !p.boleto}))} 
-            />
-            <ToggleRow 
-              label="Emitir NFS-e" 
-              desc="Aciona WebISS via SOAP para emissão" 
-              isOn={toggles.nfse} 
-              onToggle={() => setToggles(p => ({...p, nfse: !p.nfse}))} 
-            />
-            <ToggleRow 
-              label="Enviar e-mail ao cliente" 
-              desc="Boleto + NFS-e por e-mail após pagamento" 
-              isOn={toggles.email} 
-              onToggle={() => setToggles(p => ({...p, email: !p.email}))} 
-            />
-          </div>
-        </div>
-
-        <div className="p-4 px-6 border-t border-brand-border flex justify-end gap-2.5 shrink-0">
-          <button onClick={onClose} disabled={loading} className="px-4 py-2 rounded-lg text-[13px] font-semibold text-brand-muted hover:text-brand-text hover:bg-brand-surface2 transition-colors disabled:opacity-50">
-            Cancelar
-          </button>
-          <button onClick={handleSave} disabled={loading} className="flex items-center gap-1.5 px-4 py-2 bg-brand-green hover:bg-brand-green-dim text-black rounded-lg text-[13px] font-semibold transition-colors disabled:opacity-50">
-            {loading ? (
-              <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Check size={16} strokeWidth={2.5} />
-            )}
-            Criar Cobrança
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ToggleRow({ label, desc, isOn, onToggle }: { label: string, desc: string, isOn: boolean, onToggle: () => void }) {
-  return (
-    <div className="flex items-center justify-between p-2.5 px-3.5 bg-brand-surface2 rounded-lg border border-brand-border">
-      <div>
-        <div className="text-[13px] font-medium text-brand-text">{label}</div>
-        <div className="text-[11px] text-brand-muted mt-0.5">{desc}</div>
-      </div>
-      <button 
-        onClick={onToggle}
-        className={`w-[38px] h-[21px] rounded-full relative transition-colors shrink-0 border ${isOn ? 'bg-brand-green border-brand-green' : 'bg-brand-surface3 border-brand-border'}`}
-      >
-        <div className={`absolute top-[1px] left-[1px] w-[17px] h-[17px] bg-white rounded-full transition-transform ${isOn ? 'translate-x-[17px]' : 'translate-x-0'}`} />
-      </button>
     </div>
   );
 }

@@ -20,7 +20,8 @@ export default function Clientes({ token }: { token: string }) {
     logradouro: '',
     bairro: '',
     numero: '',
-    complemento: ''
+    complemento: '',
+    codigoMunicipio: '' // código IBGE (usado na NFS-e nacional)
   };
 
   const [newClient, setNewClient] = useState(initialFormState);
@@ -84,7 +85,8 @@ export default function Clientes({ token }: { token: string }) {
             ...prev,
             logradouro: data.logradouro || '',
             bairro: data.bairro || '',
-            municipioUf: `${data.localidade || ''}/${data.uf || ''}`
+            municipioUf: `${data.localidade || ''}/${data.uf || ''}`,
+            codigoMunicipio: data.ibge || ''
           }));
         }
       } catch (err) {
@@ -137,7 +139,8 @@ export default function Clientes({ token }: { token: string }) {
       logradouro: client.logradouro || '',
       bairro: client.bairro || '',
       numero: client.numero || '',
-      complemento: client.complemento || ''
+      complemento: client.complemento || '',
+      codigoMunicipio: client.codigoMunicipio || ''
     });
     setEditClientId(client.id);
     setShowForm(true);
@@ -171,6 +174,8 @@ export default function Clientes({ token }: { token: string }) {
         bairro: data.bairro || prev.bairro,
         municipioUf: (data.municipio && data.uf) ? `${data.municipio}/${data.uf}` : prev.municipioUf,
         cep: data.cep ? data.cep.replace(/\D/g, '') : prev.cep,
+        // CEP mudou: o código IBGE é recalculado pelo servidor na emissão da NFS-e
+        codigoMunicipio: data.cep && data.cep.replace(/\D/g, '') !== String(prev.cep).replace(/\D/g, '') ? '' : prev.codigoMunicipio,
         telefone: data.telefone || prev.telefone,
         email: data.email || prev.email
       }));

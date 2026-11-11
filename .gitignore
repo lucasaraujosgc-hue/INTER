@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+tmp/
+
+# Dados e segredos gerados em tempo de execução (clientes, notas, certificados, credenciais do Inter)
+backup/
