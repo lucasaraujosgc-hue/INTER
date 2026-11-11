@@ -31,9 +31,12 @@ automaticamente quando o webhook confirmar o pagamento.
 - **Data de corte** (Configurações › NFS-e, padrão 31/10/2026): recebimentos até essa data aparecem com a tag **Antes**
   e não contam como pendência.
 
-**Dashboard**: recebido no mês (extrato Inter), a receber, em atraso, NFS-e do mês, gráfico recebido × faturado dos
-últimos 6 meses, pendências com atalho (recebimentos sem nota, pagamentos sem cliente, atrasos, falhas de emissão,
-cadastros incompletos, certificados vencendo), recebimentos recentes, vencimentos e histórico de atividades.
+**Dashboard**: saldo da conta Inter e boletos recebidos / a receber / em atraso (Banco Inter › Boletos / Cobranças),
+lista dos boletos com filtros, pendências com atalho (recebimentos sem nota, pagamentos sem cliente, atrasos, falhas de emissão,
+cadastros incompletos, certificados vencendo), vencimentos e histórico de atividades.
+
+**Boleto pago por fora** (cliente fez Pix direto na conta): em Boletos / Cobranças use **Marcar pago**. O pagamento fica
+registrado no sistema e, se marcado, o boleto é baixado (cancelado) no Inter para não ser pago de novo nem ir a protesto.
 
 **PDFs**: os downloads saem como `NFS_NOME_DO_CLIENTE_DD-MM-AAAA.pdf` e `BOLETO_NOME_DO_CLIENTE_DD-MM-AAAA.pdf`
 (mesmo padrão nos anexos de e-mail).

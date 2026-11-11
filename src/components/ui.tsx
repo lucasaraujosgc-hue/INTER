@@ -187,7 +187,7 @@ export function CopyBtn({ text, label = 'Copiar' }: { text: string; label?: stri
     <button
       type="button"
       onClick={async () => { if (await copyText(text)) { setOk(true); setTimeout(() => setOk(false), 1500); } }}
-      className="inline-flex items-center gap-1 text-[11px] text-brand-muted hover:text-brand-orange-dim"
+      className="inline-flex items-center gap-1 text-[11px] text-brand-muted hover:text-brand-orange-dim whitespace-nowrap"
       title={text}
     >
       {ok ? <Check size={12} /> : <Copy size={12} />}{ok ? 'Copiado' : label}

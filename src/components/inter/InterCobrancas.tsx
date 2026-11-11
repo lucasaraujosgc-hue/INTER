@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { RefreshCw, Plus, Download, FileDown, Ban, Pencil, Eye } from 'lucide-react';
+import { RefreshCw, Plus, Download, FileDown, Ban, Pencil, Eye, CheckCircle2, Undo2, Receipt } from 'lucide-react';
 import { apiFetch, brl, fmtDate, fmtDoc, isoDate, openBlob } from '../../lib/api';
 import { Card, Btn, Badge, DataTable, Field, Input, Select, Alert, IconBtn, useLoader, Modal, CopyBtn, JsonView } from '../ui';
 import { SITUACAO_LABEL } from './InterVisaoGeral';
 import NovaCobrancaModal from '../NovaCobrancaModal';
+import MarcarPagoModal, { BoletoParaBaixa } from '../MarcarPagoModal';
+import NfseEmitirModal from '../NfseEmitirModal';
 
 export default function InterCobrancas({ token }: { token: string }) {
-  const [f, setF] = useState({ dataInicial: isoDate(-30), dataFinal: isoDate(30), filtrarDataPor: 'VENCIMENTO', situacao: '', pessoaPagadora: '', cpfCnpjPessoaPagadora: '', seuNumero: '' });
+  const [f, setF] = useState({ dataInicial: isoDate(-90), dataFinal: isoDate(60), filtrarDataPor: 'VENCIMENTO', situacao: '', pessoaPagadora: '', cpfCnpjPessoaPagadora: '', seuNumero: '' });
   const [pagina, setPagina] = useState(0);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [nova, setNova] = useState(false);
@@ -14,6 +16,20 @@ export default function InterCobrancas({ token }: { token: string }) {
   const [editar, setEditar] = useState<any>(null);
   const [cancelar, setCancelar] = useState<any>(null);
   const [importar, setImportar] = useState(false);
+  const [marcarPago, setMarcarPago] = useState<BoletoParaBaixa | null>(null);
+  const [emitirNfse, setEmitirNfse] = useState<any>(null);
+
+  const desfazerBaixa = async (r: any) => {
+    const aviso = r.baixaManual?.canceladoNoInter
+      ? 'Remover a marcação de pago? O boleto continua cancelado no Inter (isso não volta atrás).'
+      : 'Remover a marcação de pago deste boleto?';
+    if (!confirm(aviso)) return;
+    try {
+      await apiFetch(token, `/api/inter/cobrancas/${r.cobranca.codigoSolicitacao}/marcar-pago`, { method: 'DELETE' });
+      setMsg({ type: 'success', text: 'Marcação de pagamento removida.' });
+      lista.reload();
+    } catch (e: any) { setMsg({ type: 'error', text: e.message }); }
+  };
 
   const lista = useLoader(() => apiFetch<any>(token, '/api/inter/cobrancas', {
     query: { ...f, 'paginacao.paginaAtual': pagina, 'paginacao.itensPorPagina': 50, ordenarPor: 'DATA_VENCIMENTO', tipoOrdenacao: 'DESC' },
@@ -60,7 +76,23 @@ export default function InterCobrancas({ token }: { token: string }) {
             { key: 'emissao', label: 'Emissão', render: (r: any) => <span className="text-brand-muted">{fmtDate(r.cobranca.dataEmissao)}</span> },
             { key: 'venc', label: 'Vencimento', render: (r: any) => fmtDate(r.cobranca.dataVencimento) },
             { key: 'valor', label: 'Valor', align: 'right', render: (r: any) => <div className="font-mono"><div>{brl(r.cobranca.valorNominal)}</div>{Number(r.cobranca.valorTotalRecebido) > 0 && <div className="text-[11px] text-brand-green">recebido {brl(r.cobranca.valorTotalRecebido)}</div>}</div> },
-            { key: 'sit', label: 'Situação', render: (r: any) => <div className="flex flex-col gap-1"><Badge color={SITUACAO_LABEL[r.cobranca.situacao]?.color || 'gray'}>{SITUACAO_LABEL[r.cobranca.situacao]?.label || r.cobranca.situacao}</Badge>{r.cobranca.origemRecebimento && <span className="text-[11px] text-brand-muted">via {r.cobranca.origemRecebimento}</span>}</div> },
+            {
+              key: 'sit', label: 'Situação', render: (r: any) => r.baixaManual ? (
+                <div className="flex flex-col gap-1">
+                  <Badge color="green">Pago por fora</Badge>
+                  <span className="text-[11px] text-brand-muted">{r.baixaManual.forma} · {fmtDate(r.baixaManual.dataPagamento)}{r.baixaManual.canceladoNoInter ? ' · baixado no Inter' : ''}</span>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1"><Badge color={SITUACAO_LABEL[r.cobranca.situacao]?.color || 'gray'}>{SITUACAO_LABEL[r.cobranca.situacao]?.label || r.cobranca.situacao}</Badge>{r.cobranca.origemRecebimento && <span className="text-[11px] text-brand-muted">via {r.cobranca.origemRecebimento}</span>}</div>
+              ),
+            },
+            {
+              key: 'nfse', label: 'NFS-e', render: (r: any) => r.local?.nfse
+                ? <Badge color={r.local.nfse.status === 'canceled' ? 'gray' : 'green'}>{r.local.nfse.numero ? `Nº ${r.local.nfse.numero}` : 'Emitida'}</Badge>
+                : r.local?.nfseErro ? <span className="text-[12px] text-red-600" title={r.local.nfseErro.erro}>Erro na emissão</span>
+                : r.local?.emitirNfseAoPagar ? <Badge color="blue">Ao receber</Badge>
+                : <span className="text-brand-dim">—</span>,
+            },
             {
               key: 'copiar', label: 'Pagamento', render: (r: any) => (
                 <div className="flex flex-col gap-1">
@@ -71,9 +103,17 @@ export default function InterCobrancas({ token }: { token: string }) {
             },
             {
               key: 'acoes', label: '', align: 'right', render: (r: any) => {
-                const aberta = ['A_RECEBER', 'ATRASADO'].includes(r.cobranca.situacao);
+                const aberta = ['A_RECEBER', 'ATRASADO'].includes(r.cobranca.situacao) && !r.baixaManual;
+                const paga = !!r.baixaManual || ['RECEBIDO', 'MARCADO_RECEBIDO'].includes(r.cobranca.situacao);
+                const boleto: BoletoParaBaixa = { codigo: r.cobranca.codigoSolicitacao, pagador: r.cobranca.pagador?.nome, valor: Number(r.cobranca.valorNominal), vencimento: r.cobranca.dataVencimento, situacao: r.cobranca.situacao };
                 return (
-                  <div className="flex gap-1 justify-end">
+                  <div className="flex gap-1 justify-end items-center">
+                    {r.cobranca.situacao === 'ATRASADO' && !r.baixaManual && (
+                      <Btn variant="primary" className="!py-1 !px-2.5 !text-[12px] whitespace-nowrap" icon={<CheckCircle2 size={13} />} onClick={() => setMarcarPago(boleto)}>Marcar pago</Btn>
+                    )}
+                    {r.cobranca.situacao === 'A_RECEBER' && !r.baixaManual && <IconBtn title="Marcar como pago (pago por fora do boleto)" onClick={() => setMarcarPago(boleto)}><CheckCircle2 size={13} /></IconBtn>}
+                    {r.baixaManual && <IconBtn title="Desfazer marcação de pago" onClick={() => desfazerBaixa(r)}><Undo2 size={13} /></IconBtn>}
+                    {paga && !r.local?.nfse && <IconBtn title="Emitir NFS-e" onClick={() => setEmitirNfse(r)}><Receipt size={13} /></IconBtn>}
                     <IconBtn title="Detalhes" onClick={() => ver(r.cobranca.codigoSolicitacao)}><Eye size={13} /></IconBtn>
                     <IconBtn title="PDF do boleto" onClick={() => openBlob(token, `/api/inter/cobrancas/${r.cobranca.codigoSolicitacao}/pdf`).catch(e => setMsg({ type: 'error', text: e.message }))}><FileDown size={13} /></IconBtn>
                     {aberta && <IconBtn title="Alterar vencimento/valor" onClick={() => setEditar(r)}><Pencil size={13} /></IconBtn>}
@@ -93,6 +133,22 @@ export default function InterCobrancas({ token }: { token: string }) {
         )}
       </Card>
 
+      {marcarPago && <MarcarPagoModal token={token} boleto={marcarPago} onClose={() => setMarcarPago(null)} onDone={t => { setMsg({ type: 'success', text: t }); lista.reload(); }} />}
+      {emitirNfse && (
+        <NfseEmitirModal
+          token={token}
+          titulo="Emitir NFS-e do boleto"
+          inicial={{
+            clienteId: emitirNfse.cliente?.id,
+            valor: Number(emitirNfse.baixaManual?.valor || emitirNfse.cobranca.valorTotalRecebido || emitirNfse.cobranca.valorNominal),
+            competencia: String(emitirNfse.baixaManual?.dataPagamento || emitirNfse.cobranca.dataSituacao || emitirNfse.cobranca.dataVencimento || '').slice(0, 7),
+            pagador: { nome: emitirNfse.cobranca.pagador?.nome, cpfCnpj: emitirNfse.cobranca.pagador?.cpfCnpj },
+          }}
+          origem={emitirNfse.local ? { tipo: 'cobranca', cobrancaId: emitirNfse.local.id, codigoSolicitacao: emitirNfse.cobranca.codigoSolicitacao } : { tipo: 'cobranca', codigoSolicitacao: emitirNfse.cobranca.codigoSolicitacao }}
+          onClose={() => setEmitirNfse(null)}
+          onSuccess={() => lista.reload()}
+        />
+      )}
       {nova && <NovaCobrancaModal token={token} onClose={() => setNova(false)} onSuccess={lista.reload} />}
       {detalhe && (
         <Modal title="Detalhes da cobrança" subtitle={detalhe.cobranca?.codigoSolicitacao} onClose={() => setDetalhe(null)}>

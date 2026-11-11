@@ -10,7 +10,7 @@ import {
 } from './client';
 import {
   listarEntradas, marcarEntrada, vincularEntrada, importarCobrancas, sincronizarCobranca, criarCobrancaInter, cancelarCobranca,
-  registrarOperacao, saidasPermitidas, processarWebhook,
+  registrarOperacao, saidasPermitidas, processarWebhook, enriquecerBoletos, marcarCobrancaPaga, desfazerBaixa,
 } from './service';
 import { files, getSettings, saveSettings, writeSecretFile, readJson, getWebhookSecret, nomeArquivo } from '../storage';
 
@@ -69,7 +69,6 @@ const PROXIES: ProxyRoute[] = [
   { method: 'get', local: '/pagamentos/pix/:codigoSolicitacao', remote: '/banking/v2/pix/{codigoSolicitacao}', scope: 'pagamento-pix.read' },
   { method: 'delete', local: '/pagamentos/:codigoTransacao', remote: '/banking/v2/pagamento/{codigoTransacao}', scope: 'pagamento-boleto.write', saida: 'Cancelamento de agendamento' },
   // Cobrança v3 (boleto com Pix)
-  { method: 'get', local: '/cobrancas', remote: '/cobranca/v3/cobrancas', scope: 'boleto-cobranca.read' },
   { method: 'get', local: '/cobrancas/sumario', remote: '/cobranca/v3/cobrancas/sumario', scope: 'boleto-cobranca.read' },
   { method: 'get', local: '/cobrancas/edicao/:codigoEdicao', remote: '/cobranca/v3/cobrancas/edicao/{codigoEdicao}', scope: 'boleto-cobranca.read' },
   { method: 'get', local: '/cobrancas/:codigoSolicitacao', remote: '/cobranca/v3/cobrancas/{codigoSolicitacao}', scope: 'boleto-cobranca.read' },
@@ -278,6 +277,21 @@ export function createInterRouter() {
     const { dataInicial, dataFinal, filtrarDataPor, situacao, criarClientes } = req.body || {};
     if (!dataInicial || !dataFinal) throw new InterError('Informe o período (dataInicial e dataFinal).', 400);
     res.json({ success: true, ...(await importarCobrancas({ dataInicial, dataFinal, filtrarDataPor, situacao, criarClientes })) });
+  }));
+
+  // Lista do Inter com a baixa manual, o vínculo local (NFS-e) e o cliente identificado.
+  r.get('/cobrancas', wrap(async (req, res) => {
+    const data = await interRequest<any>({ method: 'get', path: '/cobranca/v3/cobrancas', scope: 'boleto-cobranca.read', query: req.query as any });
+    res.json({ ...(data || {}), cobrancas: enriquecerBoletos(data?.cobrancas || []) });
+  }));
+
+  // Boleto pago por fora (Pix direto na conta): marca como pago e, opcionalmente, baixa (cancela) no Inter.
+  r.post('/cobrancas/:codigoSolicitacao/marcar-pago', wrap(async (req, res) => {
+    res.json({ success: true, ...(await marcarCobrancaPaga(req.params.codigoSolicitacao, req.body || {})) });
+  }));
+
+  r.delete('/cobrancas/:codigoSolicitacao/marcar-pago', wrap(async (req, res) => {
+    res.json({ success: true, ...desfazerBaixa(req.params.codigoSolicitacao) });
   }));
 
   // PDF do boleto com nome amigável: BOLETO_CLIENTE_DD-MM-AAAA.pdf

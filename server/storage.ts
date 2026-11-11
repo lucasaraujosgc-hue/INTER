@@ -13,6 +13,8 @@ export const files = {
   nfse: path.join(backupDir, 'nfse.json'),
   // Marcações locais sobre as entradas do extrato (ex.: "ignorar", vínculo com NFS-e)
   interEntradas: path.join(backupDir, 'inter_entradas.json'),
+  // Boletos marcados como pagos por fora (ex.: cliente pagou por Pix direto na conta), por codigoSolicitacao
+  cobrancasBaixas: path.join(backupDir, 'cobrancas_baixas.json'),
   // Histórico das operações de saída feitas pelo sistema (Pix, boletos, DARF, lotes)
   interOperacoes: path.join(backupDir, 'inter_operacoes.json'),
   // Últimos webhooks recebidos do Inter
@@ -35,6 +37,7 @@ export function ensureStorage() {
     if (!fs.existsSync(f)) fs.writeFileSync(f, '[]');
   }
   if (!fs.existsSync(files.interEntradas)) fs.writeFileSync(files.interEntradas, '{}');
+  if (!fs.existsSync(files.cobrancasBaixas)) fs.writeFileSync(files.cobrancasBaixas, '{}');
   if (!fs.existsSync(files.settings)) {
     fs.writeFileSync(files.settings, JSON.stringify({ interClientId: '', interClientSecret: '', interContaCorrente: '' }));
   }

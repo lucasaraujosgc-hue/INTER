@@ -4,16 +4,17 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, FileText, Users, Building2, Settings, BarChart2, Plus, Receipt, LogOut } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, Building2, Settings, BarChart2, Plus, Receipt, LogOut, ArrowDownToLine } from 'lucide-react';
 import Login from './components/Login';
 import Configuracoes from './components/Configuracoes';
 import Clientes from './components/Clientes';
-import Cobrancas from './components/Cobrancas';
 import Nfse from './components/Nfse';
 import BancoInter from './components/BancoInter';
 import Relatorios from './components/Relatorios';
 import NovaCobrancaModal from './components/NovaCobrancaModal';
 import Dashboard, { Navegar } from './components/Dashboard';
+import InterCobrancas from './components/inter/InterCobrancas';
+import InterEntradas from './components/inter/InterEntradas';
 
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
@@ -55,8 +56,10 @@ export default function App() {
             <Configuracoes token={token} />
           ) : activeTab === 'Clientes' ? (
             <Clientes token={token} />
-          ) : activeTab === 'Cobranças' ? (
-            <Cobrancas token={token} refreshKey={refreshKey} />
+          ) : activeTab === 'Boletos / Cobranças' ? (
+            <React.Fragment key={refreshKey}><InterCobrancas token={token} /></React.Fragment>
+          ) : activeTab === 'Entradas → NFS-e' ? (
+            <InterEntradas token={token} />
           ) : activeTab === 'NFS-e' ? (
             <Nfse token={token} refreshKey={refreshKey} setRefreshKey={setRefreshKey} />
           ) : activeTab === 'Banco Inter' ? (
@@ -77,12 +80,13 @@ function Sidebar({ activeTab, setActiveTab, onLogout }: { activeTab: string, set
   const navItems = [
     { label: 'Principal', isLabel: true },
     { id: 'Dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { id: 'Cobranças', icon: FileText, label: 'Cobranças' },
+    { id: 'Boletos / Cobranças', icon: FileText, label: 'Boletos / Cobranças' },
     { id: 'Clientes', icon: Users, label: 'Clientes' },
-    { id: 'NFS-e', icon: Receipt, label: 'NFS-e' },
+    { id: 'Entradas → NFS-e', icon: ArrowDownToLine, label: 'Entradas → NFS-e' },
     { label: 'Integrações', isLabel: true },
     { id: 'Banco Inter', icon: Building2, label: 'Banco Inter' },
     { label: 'Sistema', isLabel: true },
+    { id: 'NFS-e', icon: Receipt, label: 'Notas emitidas' },
     { id: 'Configurações', icon: Settings, label: 'Configurações' },
     { id: 'Relatórios', icon: BarChart2, label: 'Relatórios' },
   ];
@@ -139,9 +143,10 @@ function Sidebar({ activeTab, setActiveTab, onLogout }: { activeTab: string, set
 function Topbar({ title, onNew }: { title: string, onNew: () => void }) {
   const subMap: Record<string, string> = {
     'Dashboard': 'Recebimentos, notas e cobranças que pedem atenção',
-    'Cobranças': 'Gerencie todas as cobranças e boletos',
+    'Boletos / Cobranças': 'Boletos com Pix no Banco Inter: emitir, acompanhar e marcar como pago',
+    'Entradas → NFS-e': 'Recebimentos da conta Inter e emissão das notas',
     'Clientes': 'Base de clientes e pagadores vinculados',
-    'NFS-e': 'Notas fiscais de serviço — padrão nacional',
+    'NFS-e': 'Notas fiscais emitidas — padrão nacional',
     'Banco Inter': 'Saldo, extrato, boletos, Pix, pagamentos e NFS-e das entradas',
     'Configurações': 'Ajustes do sistema',
     'Relatórios': 'Métricas e resultados',
@@ -151,7 +156,7 @@ function Topbar({ title, onNew }: { title: string, onNew: () => void }) {
   return (
     <div className="px-7 py-4 border-b border-brand-border flex items-center gap-4 bg-white/70 backdrop-blur shrink-0">
       <div className="min-w-0">
-        <h1 className="text-[20px] font-semibold text-brand-forest font-serif tracking-[-0.015em] leading-tight">{title}</h1>
+        <h1 className="text-[20px] font-semibold text-brand-forest font-serif tracking-[-0.015em] leading-tight">{title === 'NFS-e' ? 'Notas emitidas' : title}</h1>
         <div className="text-[13px] text-brand-muted mt-0.5 truncate">{subMap[title] || ''}</div>
       </div>
       <div className="ml-auto flex items-center gap-3">

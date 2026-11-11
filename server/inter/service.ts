@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { files, readJson, writeJson, onlyDigits, getSettings, newId, corteEntradas } from '../storage';
+import { files, readJson, writeJson, onlyDigits, getSettings, newId, corteEntradas, hojeBR } from '../storage';
 import { interRequest, InterError } from './client';
 import { emitirNfse } from '../nfse/service';
 
@@ -362,7 +362,9 @@ function upsertCobrancaFromInter(item: any, opts: { criarClientes?: boolean } = 
     clientName: client?.name || cob.pagador?.nome || existing?.clientName,
     value: Number(cob.valorNominal ?? existing?.value ?? 0),
     due: cob.dataVencimento || existing?.due,
-    status: statusFromSituacao(cob.situacao),
+    // Boleto marcado como pago por fora (Pix direto na conta) continua pago, mesmo cancelado/atrasado no Inter.
+    status: lerBaixas()[cob.codigoSolicitacao] ? 'paid' : statusFromSituacao(cob.situacao),
+    pagoManual: lerBaixas()[cob.codigoSolicitacao] || undefined,
     boleto: item.boleto ? { ...existing?.boleto, ...item.boleto } : existing?.boleto || null,
     pix: item.pix ? { ...existing?.pix, ...item.pix } : existing?.pix || null,
     inter: {
@@ -597,6 +599,117 @@ export async function cancelarCobranca(codigoSolicitacao: string, motivoCancelam
 }
 
 // ---------------------------------------------------------------------------
+// Baixa manual: boleto pago por fora (cliente fez Pix direto na conta)
+// ---------------------------------------------------------------------------
+
+export function lerBaixas(): Record<string, any> {
+  return readJson<Record<string, any>>(files.cobrancasBaixas, {});
+}
+
+/** Junta à lista do Inter a baixa manual, o registro local (NFS-e) e o cliente identificado. */
+export function enriquecerBoletos(items: any[]) {
+  const baixas = lerBaixas();
+  const locais = readJson<any[]>(files.cobrancas, []);
+  const clients = getClients();
+  const nfses = readJson<any[]>(files.nfse, []);
+  return items.map(item => {
+    const cob = item.cobranca || item;
+    const local = locais.find(c => c.inter?.codigoSolicitacao === cob.codigoSolicitacao);
+    const cli = (local?.client && clients.find(c => c.id === local.client)) || matchClient(clients, cob.pagador?.cpfCnpj, cob.pagador?.nome);
+    const nf = local?.nfse ? nfses.find(n => n.id === local.nfse) : null;
+    return {
+      ...item,
+      baixaManual: baixas[cob.codigoSolicitacao] || null,
+      cliente: cli ? { id: cli.id, name: cli.name, email: cli.email || '' } : null,
+      local: local ? {
+        id: local.id,
+        nfse: nf ? { id: nf.id, numero: nf.numero, status: nf.status } : (local.nfse ? { id: local.nfse } : null),
+        nfseErro: local.nfseErro || null,
+        emitirNfseAoPagar: !!local.emitirNfseAoPagar,
+      } : null,
+    };
+  });
+}
+
+// Boletos do Inter para o dashboard (cache curto: a listagem pode ter várias páginas).
+let cacheBoletos: { k: string; em: number; itens: any[] } | null = null;
+export function limparCacheBoletos() { cacheBoletos = null; }
+export async function boletosComCache(dataInicial: string, dataFinal: string, maxIdadeMs = 3 * 60_000, forcar = false) {
+  const k = `${dataInicial}|${dataFinal}`;
+  if (!forcar && cacheBoletos && cacheBoletos.k === k && Date.now() - cacheBoletos.em < maxIdadeMs) return cacheBoletos.itens;
+  const itens: any[] = [];
+  for (let pagina = 0; pagina < 20; pagina++) {
+    const r = await interRequest<any>({
+      method: 'get', path: '/cobranca/v3/cobrancas', scope: 'boleto-cobranca.read',
+      query: { dataInicial, dataFinal, filtrarDataPor: 'VENCIMENTO', 'paginacao.itensPorPagina': 1000, 'paginacao.paginaAtual': pagina },
+    });
+    const lista = r?.cobrancas || [];
+    itens.push(...lista);
+    if (r?.ultimaPagina === true || pagina + 1 >= Number(r?.totalPaginas || 1) || !lista.length) break;
+  }
+  cacheBoletos = { k, em: Date.now(), itens };
+  return itens;
+}
+
+const FORMAS_BAIXA = ['Pix direto na conta', 'Transferência', 'Dinheiro', 'Outro'];
+
+/**
+ * Marca como pago um boleto que o cliente quitou por fora (Pix direto, transferência…).
+ * Com `baixarNoInter`, cancela o boleto no Inter para que não seja pago de novo nem siga para protesto.
+ */
+export async function marcarCobrancaPaga(codigoSolicitacao: string, input: {
+  dataPagamento?: string; valor?: number | string; forma?: string; observacao?: string; baixarNoInter?: boolean;
+}) {
+  const det = await interRequest<any>({ method: 'get', path: `/cobranca/v3/cobrancas/${encodeURIComponent(codigoSolicitacao)}`, scope: 'boleto-cobranca.read' });
+  const cob = det?.cobranca;
+  if (!cob) throw new InterError('Cobrança não encontrada no Inter.', 404);
+  if (['RECEBIDO', 'MARCADO_RECEBIDO'].includes(cob.situacao)) throw new InterError('Este boleto já consta como recebido no Inter.', 400);
+  const dataPagamento = /^\d{4}-\d{2}-\d{2}$/.test(String(input.dataPagamento || '')) ? String(input.dataPagamento) : hojeBR();
+  if (dataPagamento > hojeBR()) throw new InterError('A data do pagamento não pode ser futura.', 400);
+  const valor = Number(input.valor) > 0 ? Number(input.valor) : Number(cob.valorNominal || 0);
+  const forma = FORMAS_BAIXA.includes(String(input.forma)) ? String(input.forma) : FORMAS_BAIXA[0];
+
+  let canceladoNoInter = false;
+  if (input.baixarNoInter && ['A_RECEBER', 'ATRASADO'].includes(cob.situacao)) {
+    await cancelarCobranca(codigoSolicitacao, `Pago por fora: ${forma}`);
+    canceladoNoInter = true;
+  }
+
+  const baixa = {
+    em: new Date().toISOString(), dataPagamento, valor, forma,
+    observacao: String(input.observacao || '').slice(0, 200), canceladoNoInter, situacaoAnterior: cob.situacao,
+  };
+  const baixas = lerBaixas();
+  baixas[codigoSolicitacao] = baixa;
+  writeJson(files.cobrancasBaixas, baixas);
+
+  // Registro local (importa se ainda não existir) já como pago.
+  const { record } = upsertCobrancaFromInter(canceladoNoInter ? { ...det, cobranca: { ...cob, situacao: 'CANCELADO' } } : det, { criarClientes: true });
+  limparCacheBoletos();
+  let nfse: any = null;
+  try { nfse = await talvezEmitirNfseDaCobranca(record.id); } catch (e: any) { nfse = { success: false, error: e.message }; }
+  return { baixa, cobranca: readJson<any[]>(files.cobrancas, []).find(c => c.id === record.id) || record, nfse };
+}
+
+/** Desfaz a marcação manual. Se o boleto foi cancelado no Inter, o cancelamento não volta atrás. */
+export function desfazerBaixa(codigoSolicitacao: string) {
+  const baixas = lerBaixas();
+  const baixa = baixas[codigoSolicitacao];
+  if (!baixa) throw new InterError('Este boleto não está marcado como pago manualmente.', 404);
+  delete baixas[codigoSolicitacao];
+  writeJson(files.cobrancasBaixas, baixas);
+  const cobrancas = readJson<any[]>(files.cobrancas, []);
+  const c = cobrancas.find(x => x.inter?.codigoSolicitacao === codigoSolicitacao);
+  if (c) {
+    delete c.pagoManual;
+    c.status = statusFromSituacao(c.inter?.situacao);
+    writeJson(files.cobrancas, cobrancas);
+  }
+  limparCacheBoletos();
+  return { canceladoNoInter: !!baixa.canceladoNoInter };
+}
+
+// ---------------------------------------------------------------------------
 // Operações de saída (log local) e webhooks recebidos
 // ---------------------------------------------------------------------------
 
@@ -626,7 +739,7 @@ export async function processarWebhook(tipo: string, payload: any) {
         try { await sincronizarCobranca(ev.codigoSolicitacao); } catch (e) { console.error('Webhook cobrança: falha ao importar', (e as Error).message); }
         continue;
       }
-      c.status = statusFromSituacao(ev.situacao);
+      c.status = lerBaixas()[ev.codigoSolicitacao] ? 'paid' : statusFromSituacao(ev.situacao);
       c.inter = {
         ...c.inter,
         situacao: ev.situacao,

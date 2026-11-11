@@ -104,9 +104,9 @@ const emissaoMutex = createMutex();
 
 /** Quando a nota nasce de uma cobrança, grava o vínculo na própria cobrança. */
 function vincularCobranca(origem: Record<string, any> | undefined, nfseId: string) {
-  if (!origem?.cobrancaId) return;
+  if (!origem?.cobrancaId && !origem?.codigoSolicitacao) return;
   const cobrancas = readJson<any[]>(files.cobrancas, []);
-  const c = cobrancas.find(x => x.id === origem.cobrancaId);
+  const c = cobrancas.find(x => (origem.cobrancaId && x.id === origem.cobrancaId) || (origem.codigoSolicitacao && x.inter?.codigoSolicitacao === origem.codigoSolicitacao));
   if (c && !c.nfse) {
     c.nfse = nfseId;
     delete c.nfseErro;
