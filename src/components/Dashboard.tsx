@@ -273,6 +273,7 @@ export default function Dashboard({ token, refreshKey, navegar }: { token: strin
                       <td className="px-3 py-2.5">
                         <div className="flex gap-1 justify-end items-center">
                           {b.status === 'overdue' && dados.fonteBoletos === 'inter' && <Btn variant="primary" title="Marcar como pago (cliente pagou por Pix/transferência)" className="!py-1 !px-2 !text-[12px] whitespace-nowrap" icon={<CheckCircle2 size={13} />} onClick={() => setMarcarPago(paraBaixa(b))}>Pago</Btn>}
+                          {b.status === 'canceled' && dados.fonteBoletos === 'inter' && <IconBtn title="Marcar como pago (cliente pagou por fora)" onClick={() => setMarcarPago(paraBaixa(b))}><CheckCircle2 size={13} /></IconBtn>}
                           {b.status === 'paid' && !b.local?.nfse && <IconBtn title="Emitir NFS-e" onClick={() => setEmitirBoleto(b)}><Receipt size={13} /></IconBtn>}
                           {dados.fonteBoletos === 'inter' && <IconBtn title="Baixar PDF do boleto" onClick={() => openBlob(token, `/api/inter/cobrancas/${b.codigo}/pdf`).catch(err => setMsg({ type: 'error', text: err.message }))}><FileDown size={13} /></IconBtn>}
                           {b.status !== 'canceled' && b.status !== 'paid' && (

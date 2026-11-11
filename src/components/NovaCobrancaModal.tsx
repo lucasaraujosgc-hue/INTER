@@ -3,11 +3,11 @@ import { Check } from 'lucide-react';
 import { apiFetch, isoDate, fmtDoc } from '../lib/api';
 import { Modal, Field, Input, Select, Textarea, Btn, Alert, JsonView } from './ui';
 
-export default function NovaCobrancaModal({ token, onClose, onSuccess }: { token: string; onClose: () => void; onSuccess?: () => void }) {
+export default function NovaCobrancaModal({ token, onClose, onSuccess, inicial }: { token: string; onClose: () => void; onSuccess?: () => void; inicial?: { clienteId?: string; valor?: number } }) {
   const [clients, setClients] = useState<any[]>([]);
   const [form, setForm] = useState({
-    clienteId: '',
-    valor: 300,
+    clienteId: inicial?.clienteId || '',
+    valor: inicial?.valor || 300,
     vencimento: isoDate(10),
     descricao: '',
     competencia: new Date().toISOString().slice(0, 7),

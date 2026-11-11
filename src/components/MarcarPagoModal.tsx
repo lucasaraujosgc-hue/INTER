@@ -25,7 +25,8 @@ export default function MarcarPagoModal({ token, boleto, onClose, onDone }: {
   const [valor, setValor] = useState<number>(boleto.valor);
   const [forma, setForma] = useState('Pix direto na conta');
   const [observacao, setObservacao] = useState('');
-  const [baixarNoInter, setBaixarNoInter] = useState(true);
+  // Desmarcado por padrão: cancelar o boleto no Inter não tem volta.
+  const [baixarNoInter, setBaixarNoInter] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const aberto = ['A_RECEBER', 'ATRASADO'].includes(String(boleto.situacao));
@@ -81,12 +82,13 @@ export default function MarcarPagoModal({ token, boleto, onClose, onDone }: {
             <b className="text-brand-forest">Baixar o boleto no Inter</b>
             <span className="block text-brand-muted text-[12px]">
               Cancela o boleto e o QR Code no banco para o cliente não pagar duas vezes e o boleto não seguir para protesto.
-              Não dá para desfazer no Inter. Desmarque para só registrar o pagamento no sistema.
+              <b className="text-red-700"> Atenção: o cancelamento no Inter não pode ser desfeito</b>, nem se você tirar a marcação de pago depois.
+              Sem esta opção, o pagamento fica registrado só no sistema e o boleto continua aberto no banco.
             </span>
           </span>
         </label>
       ) : (
-        <Alert type="info">Este boleto não está em aberto no Inter; o pagamento será registrado só no sistema.</Alert>
+        <Alert type="info">{boleto.situacao === 'CANCELADO' ? 'Este boleto está cancelado no Inter.' : 'Este boleto não está em aberto no Inter.'} O pagamento será registrado só no sistema.</Alert>
       )}
     </Modal>
   );

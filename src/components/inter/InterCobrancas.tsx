@@ -11,7 +11,7 @@ export default function InterCobrancas({ token }: { token: string }) {
   const [f, setF] = useState({ dataInicial: isoDate(-90), dataFinal: isoDate(60), filtrarDataPor: 'VENCIMENTO', situacao: '', pessoaPagadora: '', cpfCnpjPessoaPagadora: '', seuNumero: '' });
   const [pagina, setPagina] = useState(0);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [nova, setNova] = useState(false);
+  const [nova, setNova] = useState<false | { clienteId?: string; valor?: number }>(false);
   const [detalhe, setDetalhe] = useState<any>(null);
   const [editar, setEditar] = useState<any>(null);
   const [cancelar, setCancelar] = useState<any>(null);
@@ -21,8 +21,8 @@ export default function InterCobrancas({ token }: { token: string }) {
 
   const desfazerBaixa = async (r: any) => {
     const aviso = r.baixaManual?.canceladoNoInter
-      ? 'Remover a marcação de pago? O boleto continua cancelado no Inter (isso não volta atrás).'
-      : 'Remover a marcação de pago deste boleto?';
+      ? 'Este boleto foi cancelado no Inter quando foi marcado como pago, e o cancelamento não volta atrás.\n\nSe remover a marcação, ele aparece como CANCELADO (não volta para "em atraso"). Para cobrar de novo, use "Emitir novo boleto".\n\nRemover a marcação mesmo assim?'
+      : 'Remover a marcação de pago deste boleto? Ele volta para a situação que tem no Inter.';
     if (!confirm(aviso)) return;
     try {
       await apiFetch(token, `/api/inter/cobrancas/${r.cobranca.codigoSolicitacao}/marcar-pago`, { method: 'DELETE' });
@@ -50,7 +50,7 @@ export default function InterCobrancas({ token }: { token: string }) {
         subtitle={`${total} cobrança(s) encontradas`}
         actions={<>
           <Btn icon={<Download size={14} />} onClick={() => setImportar(true)}>Importar para o sistema</Btn>
-          <Btn variant="primary" icon={<Plus size={14} />} onClick={() => setNova(true)}>Nova cobrança</Btn>
+          <Btn variant="primary" icon={<Plus size={14} />} onClick={() => setNova({})}>Nova cobrança</Btn>
         </>}
       >
         <div className="p-4 border-b border-brand-border grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 items-end">
@@ -112,6 +112,10 @@ export default function InterCobrancas({ token }: { token: string }) {
                       <Btn variant="primary" className="!py-1 !px-2.5 !text-[12px] whitespace-nowrap" icon={<CheckCircle2 size={13} />} onClick={() => setMarcarPago(boleto)}>Marcar pago</Btn>
                     )}
                     {r.cobranca.situacao === 'A_RECEBER' && !r.baixaManual && <IconBtn title="Marcar como pago (pago por fora do boleto)" onClick={() => setMarcarPago(boleto)}><CheckCircle2 size={13} /></IconBtn>}
+                    {['CANCELADO', 'EXPIRADO'].includes(r.cobranca.situacao) && !r.baixaManual && <>
+                      <IconBtn title="Marcar como pago (cliente pagou por fora)" onClick={() => setMarcarPago(boleto)}><CheckCircle2 size={13} /></IconBtn>
+                      <IconBtn title="Emitir novo boleto para este cliente" onClick={() => setNova({ clienteId: r.cliente?.id, valor: Number(r.cobranca.valorNominal) })}><Plus size={13} /></IconBtn>
+                    </>}
                     {r.baixaManual && <IconBtn title="Desfazer marcação de pago" onClick={() => desfazerBaixa(r)}><Undo2 size={13} /></IconBtn>}
                     {paga && !r.local?.nfse && <IconBtn title="Emitir NFS-e" onClick={() => setEmitirNfse(r)}><Receipt size={13} /></IconBtn>}
                     <IconBtn title="Detalhes" onClick={() => ver(r.cobranca.codigoSolicitacao)}><Eye size={13} /></IconBtn>
@@ -149,7 +153,7 @@ export default function InterCobrancas({ token }: { token: string }) {
           onSuccess={() => lista.reload()}
         />
       )}
-      {nova && <NovaCobrancaModal token={token} onClose={() => setNova(false)} onSuccess={lista.reload} />}
+      {nova && <NovaCobrancaModal token={token} inicial={nova} onClose={() => setNova(false)} onSuccess={lista.reload} />}
       {detalhe && (
         <Modal title="Detalhes da cobrança" subtitle={detalhe.cobranca?.codigoSolicitacao} onClose={() => setDetalhe(null)}>
           <JsonView data={detalhe} maxHeight="max-h-[60vh]" />

@@ -156,6 +156,11 @@ function pagadorDaTransacao(t: any) {
   return { nome: String(nome).trim(), cpfCnpj: String(cpfCnpj).trim() };
 }
 
+/** txid real do Pix: 26 a 35 caracteres alfanuméricos (descarta "***", vazio e outros genéricos). */
+function txidValido(t: string) {
+  return /^[a-zA-Z0-9]{26,35}$/.test(t) && !/^(.)\1+$/.test(t);
+}
+
 /** Situação de uma entrada quanto à NFS-e. "antes" = recebida até a data de corte (não exige nota pelo sistema). */
 export type SituacaoEntrada = 'emitida' | 'antes' | 'ignorada' | 'pendente';
 
@@ -172,17 +177,38 @@ export function classificarEntradas(transacoes: any[]) {
     if (n?.origem?.idTransacao && n.status !== 'canceled') nfseByTransacao.set(String(n.origem.idTransacao), n);
   }
 
-  return transacoes
-    .filter(t => (t.tipoOperacao || 'C') === 'C')
+  const creditos = transacoes.filter(t => (t.tipoOperacao || 'C') === 'C');
+
+  // Recebimento de boleto emitido pelo sistema: liga a entrada à cobrança (herda cliente e NFS-e).
+  // Só com identificador forte (nosso número, seu número ou txid de verdade) e só se a ligação for única:
+  // Pix feito pela chave costuma vir com txid genérico ("***", vazio…) igual em vários créditos, e uma cobrança
+  // corresponde a um único pagamento. Boleto marcado como pago por fora não foi pago pelo boleto/QR Code.
+  const candidatas = cobrancas.filter(c => !c.pagoManual);
+  const cobrancaDe = new Map<any, any>();
+  const usos = new Map<string, number>();
+  for (const t of creditos) {
+    const d = t.detalhes || {};
+    const nosso = String(d.nossoNumero || '').trim();
+    const seu = String(d.seuNumero || '').trim();
+    const txid = String(d.txId || d.txid || '').trim();
+    let c: any = null;
+    if (nosso) c = candidatas.find(x => String(x.boleto?.nossoNumero || '') === nosso);
+    if (!c && seu) c = candidatas.find(x => String(x.inter?.seuNumero || '') === seu);
+    if (!c && txidValido(txid)) c = candidatas.find(x => String(x.pix?.txid || '') === txid);
+    if (c) {
+      cobrancaDe.set(t, c);
+      usos.set(c.id, (usos.get(c.id) || 0) + 1);
+    }
+  }
+
+  return creditos
     .map(t => {
       const key = entradaKey(t);
       const pagador = pagadorDaTransacao(t);
       const marca = marcas[key] || null;
       const d = t.detalhes || {};
-      // Recebimento de boleto emitido pelo sistema: herda a NFS-e da cobrança, se houver.
-      const cobranca = d.nossoNumero || d.seuNumero
-        ? cobrancas.find(c => (d.nossoNumero && c.boleto?.nossoNumero === d.nossoNumero) || (d.seuNumero && c.inter?.seuNumero === d.seuNumero))
-        : (d.txId ? cobrancas.find(c => c.pix?.txid && c.pix.txid === d.txId) : null);
+      const ligada = cobrancaDe.get(t);
+      const cobranca = ligada && usos.get(ligada.id) === 1 ? ligada : null;
 
       // Cliente: vínculo manual desta entrada > cliente da cobrança > CPF/CNPJ/nome do pagador.
       let vinculo: { client: any; via: ViaVinculo } | null = null;
