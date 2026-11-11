@@ -11,10 +11,12 @@ import forge from 'node-forge';
 import nodemailer from 'nodemailer';
 import {
   ensureStorage, files, readJson, writeJson, getSettings, saveSettings, publicSettings, writeSecretFile, SECRET_SETTINGS,
+  nomeArquivo, corteEntradas,
 } from './server/storage';
 import { createInterRouter, createInterWebhookReceiver } from './server/inter/routes';
 import { InterError, interRequest, interStatus, describeCert, certMatchesKey } from './server/inter/client';
-import { criarCobrancaInter } from './server/inter/service';
+import { criarCobrancaInter, vincularPagador } from './server/inter/service';
+import { montarDashboard } from './server/dashboard';
 import {
   emitirNfse, obterPdfNfse, cancelarNfse, sincronizarNfse, testarConexaoNacional, nfseConfig, DESCRICAO_PADRAO,
 } from './server/nfse/service';
@@ -134,6 +136,17 @@ app.post('/api/cert/upload', authenticate, upload.single('pfxFile'), (req, res) 
   }
 });
 
+const CLIENT_COLORS = ['#0B4535', '#EA580C', '#0F766E', '#B45309', '#334155'];
+
+/** Normaliza a lista de pagadores vinculados enviada pela tela de clientes. */
+function sanitizePagadores(body: any) {
+  if (!Array.isArray(body?.pagadores)) return body;
+  const pagadores = body.pagadores
+    .map((p: any) => ({ cpfCnpj: String(p?.cpfCnpj || '').replace(/\D/g, ''), nome: String(p?.nome || '').trim().slice(0, 120), criadoEm: p?.criadoEm || new Date().toISOString() }))
+    .filter((p: any) => p.cpfCnpj.length === 11 || p.cpfCnpj.length === 14 || p.nome.length >= 4);
+  return { ...body, pagadores };
+}
+
 app.get('/api/clients', authenticate, (_req, res) => {
   res.json(readJson<any[]>(files.clients, []));
 });
@@ -143,9 +156,9 @@ app.post('/api/clients', authenticate, (req, res) => {
     const clients = readJson<any[]>(files.clients, []);
     const newClient = {
       id: Date.now().toString(),
-      ...req.body,
+      ...sanitizePagadores(req.body),
       init: String(req.body.name || '?').charAt(0).toUpperCase(),
-      color: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444'][Math.floor(Math.random() * 5)],
+      color: CLIENT_COLORS[Math.floor(Math.random() * CLIENT_COLORS.length)],
     };
     clients.push(newClient);
     writeJson(files.clients, clients);
@@ -160,11 +173,30 @@ app.put('/api/clients/:id', authenticate, (req, res) => {
     const clients = readJson<any[]>(files.clients, []);
     const index = clients.findIndex((c: any) => c.id === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'Cliente não encontrado' });
-    clients[index] = { ...clients[index], ...req.body };
+    clients[index] = { ...clients[index], ...sanitizePagadores(req.body) };
     writeJson(files.clients, clients);
     res.json({ success: true, client: clients[index] });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao atualizar cliente' });
+  }
+});
+
+// Vincula um pagador (ex.: sócio que paga no CPF) ao cliente, para identificar os próximos recebimentos.
+app.post('/api/clients/:id/pagadores', authenticate, (req, res) => {
+  try {
+    const client = vincularPagador(req.params.id, { cpfCnpj: req.body?.cpfCnpj, nome: req.body?.nome });
+    res.json({ success: true, client });
+  } catch (error: any) {
+    res.status(errorStatus(error)).json({ error: error.message || 'Erro ao vincular pagador' });
+  }
+});
+
+app.get('/api/dashboard', authenticate, async (req, res) => {
+  try {
+    res.json(await montarDashboard({ forcar: req.query.atualizar === '1' }));
+  } catch (error: any) {
+    console.error('Erro ao montar o dashboard:', error);
+    res.status(500).json({ error: error.message || 'Erro ao montar o dashboard' });
   }
 });
 
@@ -204,6 +236,7 @@ app.get('/api/settings', authenticate, (_req, res) => {
       interConfigured: inter.configured,
       interHasCert: inter.hasCert,
       nfse: nfseConfig(),
+      entradasCorteNfse: corteEntradas(),
     });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao ler configurações' });
@@ -343,8 +376,9 @@ app.post('/api/nfse/emitir', authenticate, async (req, res) => {
 app.get('/api/nfse/:id/pdf', authenticate, async (req, res) => {
   try {
     const pdfPath = await obterPdfNfse(req.params.id);
+    const nfse = readJson<any[]>(files.nfse, []).find(n => n.id === req.params.id);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${req.params.id}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${nomeArquivo('NFS', nfse?.clientName || req.params.id)}"`);
     fs.createReadStream(pdfPath).pipe(res);
   } catch (error: any) {
     console.error('Erro ao gerar/obter PDF:', error.message);
@@ -476,7 +510,7 @@ app.post('/api/send-email', authenticate, async (req, res) => {
         if (codigo) {
           try {
             const r = await interRequest<{ pdf: string }>({ method: 'get', path: `/cobranca/v3/cobrancas/${encodeURIComponent(codigo)}/pdf`, scope: 'boleto-cobranca.read' });
-            if (r?.pdf) attachments.push({ filename: `Boleto_${cob.inter.seuNumero || cob.id}.pdf`, content: Buffer.from(r.pdf, 'base64') });
+            if (r?.pdf) attachments.push({ filename: nomeArquivo('BOLETO', cob.clientName || cob.inter.seuNumero || cob.id), content: Buffer.from(r.pdf, 'base64') });
           } catch (e: any) {
             console.error('Erro ao anexar boleto:', e.message);
           }
@@ -487,8 +521,8 @@ app.post('/api/send-email', authenticate, async (req, res) => {
           const nfse = nfseList.find((n: any) => n.id === doc.nfseId);
           if (nfse) {
             const pdfPath = await obterPdfNfse(nfse.id);
-            attachments.push({ filename: `NFS-e_${nfse.numero || nfse.id}.pdf`, path: pdfPath });
-            if (nfse.nfseXml) attachments.push({ filename: `NFS-e_${nfse.numero || nfse.id}.xml`, content: nfse.nfseXml });
+            attachments.push({ filename: nomeArquivo('NFS', nfse.clientName || nfse.numero || nfse.id), path: pdfPath });
+            if (nfse.nfseXml) attachments.push({ filename: nomeArquivo('NFS', nfse.clientName || nfse.numero || nfse.id, 'xml'), content: nfse.nfseXml });
           }
         } catch (e) {
           console.error('Erro ao anexar PDF da nfse:', e);

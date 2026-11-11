@@ -77,7 +77,7 @@ export default function Cobrancas({ token, refreshKey }: { token: string, refres
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 flex flex-col gap-4">
       <div className="flex flex-wrap justify-between items-center gap-3">
-        <h2 className="text-lg font-bold text-brand-text">Gerenciamento de Cobranças</h2>
+        <h2 className="text-[22px] font-semibold text-brand-forest font-serif tracking-[-0.01em]">Gerenciamento de Cobranças</h2>
         <div className="flex gap-2">
           <Btn icon={<Download size={15} />} onClick={() => setImportar(true)}>Importar do Inter</Btn>
           <Btn variant="primary" icon={<Plus size={15} />} onClick={() => setNova(true)}>Nova cobrança</Btn>
@@ -85,13 +85,13 @@ export default function Cobrancas({ token, refreshKey }: { token: string, refres
       </div>
       {msg && <Alert type={msg.type} onClose={() => setMsg(null)}>{msg.text}</Alert>}
 
-      <div className="bg-brand-surface border border-brand-border rounded-xl overflow-hidden">
+      <div className="bg-brand-surface border border-brand-border rounded-xl shadow-brand overflow-hidden">
         <div className="p-4 border-b border-brand-border flex flex-wrap gap-3">
           <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-dim" size={16} />
-            <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por cliente, seu número ou nosso número..." className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 pl-10 pr-4 text-[13px] text-brand-text outline-none focus:border-brand-green" />
+            <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por cliente, seu número ou nosso número..." className="w-full bg-white border border-brand-border2 rounded-md py-2 pl-10 pr-4 text-[13px] text-brand-text outline-none focus:border-brand-orange" />
           </div>
-          <select value={status} onChange={e => setStatus(e.target.value)} className="bg-brand-surface2 border border-brand-border rounded-lg px-3 text-[13px] text-brand-text outline-none">
+          <select value={status} onChange={e => setStatus(e.target.value)} className="bg-white border border-brand-border2 rounded-md px-3 text-[13px] text-brand-text outline-none">
             <option value="">Todos os status</option>
             {Object.entries(STATUS_COBRANCA).map(([v, s]) => <option key={v} value={v}>{s.label}</option>)}
           </select>
@@ -101,7 +101,7 @@ export default function Cobrancas({ token, refreshKey }: { token: string, refres
             <thead>
               <tr>
                 {['Cliente', 'Valor', 'Vencimento', 'Status', 'Boleto / Pix', 'NFS-e', ''].map(h => (
-                  <th key={h} className="px-5 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2">{h}</th>
+                  <th key={h} className="px-5 py-3 text-xs font-semibold text-brand-muted uppercase tracking-wide border-b border-brand-border bg-brand-surface2">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -113,7 +113,7 @@ export default function Cobrancas({ token, refreshKey }: { token: string, refres
                 const st = STATUS_COBRANCA[c.status] || { label: c.status, color: 'gray' };
                 const codigo = c.inter?.codigoSolicitacao;
                 return (
-                  <tr key={c.id} className="border-b border-white/5 last:border-0 hover:bg-brand-surface2 transition-colors">
+                  <tr key={c.id} className="border-b border-brand-border last:border-0 hover:bg-brand-surface2 transition-colors">
                     <td className="px-5 py-3">
                       <div className="font-medium text-brand-text">{c.clientName}</div>
                       <div className="text-[11px] text-brand-muted font-mono">{c.inter?.seuNumero || c.id}{c.origem === 'inter' ? ' · importada' : ''}</div>
@@ -138,7 +138,7 @@ export default function Cobrancas({ token, refreshKey }: { token: string, refres
                     </td>
                     <td className="px-5 py-3 text-[12.5px]">
                       {nf ? <Badge color={nf.status === 'canceled' ? 'gray' : 'green'}>{nf.numero ? `Nº ${nf.numero}` : 'Emitida'}</Badge>
-                        : c.nfseErro ? <span className="text-red-400" title={c.nfseErro.erro}>Erro na emissão</span>
+                        : c.nfseErro ? <span className="text-red-600" title={c.nfseErro.erro}>Erro na emissão</span>
                         : c.emitirNfseAoPagar ? <Badge color="blue">Ao receber</Badge>
                         : <span className="text-brand-dim">—</span>}
                     </td>

@@ -35,7 +35,7 @@ export default function InterExtrato({ token }: { token: string }) {
         <Stat label="Saldo disponível" value={saldo.data ? brl(saldo.data.disponivel) : '—'} color="text-brand-green" />
         <Stat label="Limite" value={saldo.data ? brl(saldo.data.limite) : '—'} />
         <Stat label="Entradas no período" value={brl(tot.entradas)} color="text-brand-green" />
-        <Stat label="Saídas no período" value={brl(tot.saidas)} color="text-red-400" />
+        <Stat label="Saídas no período" value={brl(tot.saidas)} color="text-red-600" />
       </div>
       <Card title="Extrato" subtitle="Até 90 dias por consulta" actions={<Btn icon={<FileDown size={14} />} onClick={pdf}>Exportar PDF</Btn>}>
         <div className="p-4 border-b border-brand-border flex flex-wrap items-end gap-3">
@@ -63,7 +63,7 @@ export default function InterExtrato({ token }: { token: string }) {
                 );
               },
             },
-            { key: 'valor', label: 'Valor', align: 'right', render: t => <span className={`font-mono font-medium ${t.tipoOperacao === 'C' ? 'text-brand-green' : 'text-red-400'}`}>{t.tipoOperacao === 'D' ? '-' : ''}{brl(t.valor)}</span> },
+            { key: 'valor', label: 'Valor', align: 'right', render: t => <span className={`font-mono font-medium ${t.tipoOperacao === 'C' ? 'text-brand-green' : 'text-red-600'}`}>{t.tipoOperacao === 'D' ? '-' : ''}{brl(t.valor)}</span> },
           ]}
         />
       </Card>

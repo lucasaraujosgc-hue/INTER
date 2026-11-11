@@ -26,7 +26,7 @@ export default function InterVisaoGeral({ token, onNavigate }: { token: string; 
     [token], [],
   );
 
-  const semNota = entradas.data.filter(e => !e.nfse && e.marcacao?.status !== 'ignorada');
+  const semNota = entradas.data.filter(e => e.situacao === 'pendente');
   const totalRecebidoMes = entradas.data.reduce((a, e) => a + e.valor, 0);
 
   return (
@@ -36,7 +36,7 @@ export default function InterVisaoGeral({ token, onNavigate }: { token: string; 
         <Stat label="Saldo disponível" value={saldo.data ? brl(saldo.data.disponivel) : '—'} color="text-brand-green" sub={saldo.data?.limite ? `Limite: ${brl(saldo.data.limite)}` : undefined} />
         <Stat label="Bloqueado" value={saldo.data ? brl((saldo.data.bloqueadoCheque || 0) + (saldo.data.bloqueadoJudicialmente || 0) + (saldo.data.bloqueadoAdministrativo || 0)) : '—'} sub="Cheque, judicial e administrativo" />
         <Stat label="Entradas no mês" value={brl(totalRecebidoMes)} sub={`${entradas.data.length} créditos`} />
-        <Stat label="Entradas sem NFS-e" value={semNota.length} color={semNota.length ? 'text-amber-400' : 'text-brand-text'} sub={semNota.length ? brl(semNota.reduce((a, e) => a + e.valor, 0)) : 'Tudo emitido'} />
+        <Stat label="Entradas sem NFS-e" value={semNota.length} color={semNota.length ? 'text-amber-700' : 'text-brand-text'} sub={semNota.length ? brl(semNota.reduce((a, e) => a + e.valor, 0)) : 'Tudo emitido'} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -44,7 +44,7 @@ export default function InterVisaoGeral({ token, onNavigate }: { token: string; 
           <div className="p-4 flex flex-col gap-2">
             {sumario.data.length === 0 && !sumario.loading && <div className="text-[13px] text-brand-muted">Sem cobranças no período.</div>}
             {sumario.data.filter(s => s.quantidade > 0).map(s => (
-              <div key={s.situacao} className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
+              <div key={s.situacao} className="flex items-center justify-between py-1.5 border-b border-brand-border last:border-0">
                 <Badge color={SITUACAO_LABEL[s.situacao]?.color || 'gray'}>{SITUACAO_LABEL[s.situacao]?.label || s.situacao}</Badge>
                 <span className="text-[13px] text-brand-muted">{s.quantidade} · <b className="font-mono text-brand-text">{brl(s.valor)}</b></span>
               </div>
@@ -56,7 +56,7 @@ export default function InterVisaoGeral({ token, onNavigate }: { token: string; 
         <Card title="Pendências de NFS-e" subtitle="Créditos do mês ainda sem nota fiscal">
           <div className="p-4 flex flex-col gap-2">
             {semNota.slice(0, 8).map(e => (
-              <div key={e.idTransacao} className="flex items-center justify-between gap-3 py-1.5 border-b border-white/5 last:border-0 text-[13px]">
+              <div key={e.idTransacao} className="flex items-center justify-between gap-3 py-1.5 border-b border-brand-border last:border-0 text-[13px]">
                 <span className="truncate">{e.cliente?.name || e.pagador.nome || e.titulo}</span>
                 <span className="font-mono shrink-0">{brl(e.valor)}</span>
               </div>

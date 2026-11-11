@@ -9,10 +9,10 @@ import {
   describeCert, INTER_SCOPE_GROUPS, ALL_INTER_SCOPES, newTxid, loadInterConfig,
 } from './client';
 import {
-  listarEntradas, marcarEntrada, importarCobrancas, sincronizarCobranca, criarCobrancaInter, cancelarCobranca,
+  listarEntradas, marcarEntrada, vincularEntrada, importarCobrancas, sincronizarCobranca, criarCobrancaInter, cancelarCobranca,
   registrarOperacao, saidasPermitidas, processarWebhook,
 } from './service';
-import { files, getSettings, saveSettings, writeSecretFile, readJson, getWebhookSecret } from '../storage';
+import { files, getSettings, saveSettings, writeSecretFile, readJson, getWebhookSecret, nomeArquivo } from '../storage';
 
 type Handler = (req: express.Request, res: express.Response) => Promise<any>;
 
@@ -38,7 +38,7 @@ function requireSaidas() {
 function sendPdf(res: express.Response, base64: string, filename: string) {
   const buf = Buffer.from(base64 || '', 'base64');
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(buf);
 }
 
@@ -49,7 +49,7 @@ interface ProxyRoute {
   remote: string;
   scope: string;
   saida?: string; // descrição da operação de saída (exige permissão e é registrada)
-  pdf?: string;   // nome do arquivo quando a resposta é { pdf: base64 }
+  pdf?: () => string; // nome do arquivo quando a resposta é { pdf: base64 }
   sandboxOnly?: boolean;
 }
 
@@ -58,7 +58,7 @@ const PROXIES: ProxyRoute[] = [
   { method: 'get', local: '/saldo', remote: '/banking/v2/saldo', scope: 'extrato.read' },
   { method: 'get', local: '/extrato', remote: '/banking/v2/extrato/completo', scope: 'extrato.read' },
   { method: 'get', local: '/extrato/simples', remote: '/banking/v2/extrato', scope: 'extrato.read' },
-  { method: 'get', local: '/extrato/pdf', remote: '/banking/v2/extrato/exportar', scope: 'extrato.read', pdf: 'extrato.pdf' },
+  { method: 'get', local: '/extrato/pdf', remote: '/banking/v2/extrato/exportar', scope: 'extrato.read', pdf: () => nomeArquivo('EXTRATO', 'INTER') },
   // Banking: pagamentos
   { method: 'get', local: '/pagamentos', remote: '/banking/v2/pagamento', scope: 'pagamento-boleto.read' },
   { method: 'post', local: '/pagamentos/boleto', remote: '/banking/v2/pagamento', scope: 'pagamento-boleto.write', saida: 'Pagamento com código de barras' },
@@ -72,7 +72,6 @@ const PROXIES: ProxyRoute[] = [
   { method: 'get', local: '/cobrancas', remote: '/cobranca/v3/cobrancas', scope: 'boleto-cobranca.read' },
   { method: 'get', local: '/cobrancas/sumario', remote: '/cobranca/v3/cobrancas/sumario', scope: 'boleto-cobranca.read' },
   { method: 'get', local: '/cobrancas/edicao/:codigoEdicao', remote: '/cobranca/v3/cobrancas/edicao/{codigoEdicao}', scope: 'boleto-cobranca.read' },
-  { method: 'get', local: '/cobrancas/:codigoSolicitacao/pdf', remote: '/cobranca/v3/cobrancas/{codigoSolicitacao}/pdf', scope: 'boleto-cobranca.read', pdf: 'boleto.pdf' },
   { method: 'get', local: '/cobrancas/:codigoSolicitacao', remote: '/cobranca/v3/cobrancas/{codigoSolicitacao}', scope: 'boleto-cobranca.read' },
   { method: 'patch', local: '/cobrancas/:codigoSolicitacao', remote: '/cobranca/v3/cobrancas/{codigoSolicitacao}', scope: 'boleto-cobranca.write' },
   { method: 'post', local: '/cobrancas/:codigoSolicitacao/pagar-sandbox', remote: '/cobranca/v3/cobrancas/{codigoSolicitacao}/pagar', scope: 'boleto-cobranca.write', sandboxOnly: true },
@@ -258,6 +257,17 @@ export function createInterRouter() {
     res.json({ success: true, marcacao: marcarEntrada(req.params.idTransacao, { status, observacao: req.body?.observacao }) });
   }));
 
+  // Vincula o recebimento a um cliente (empresa); com "lembrar", o pagador fica vinculado para os próximos.
+  r.post('/entradas/:idTransacao/vincular', wrap(async (req, res) => {
+    const { clienteId, lembrar, pagador } = req.body || {};
+    if (!clienteId) throw new InterError('Selecione o cliente (empresa).', 400);
+    res.json({ success: true, ...vincularEntrada(req.params.idTransacao, { clienteId, lembrar: lembrar !== false, pagador }) });
+  }));
+
+  r.delete('/entradas/:idTransacao/vincular', wrap(async (req, res) => {
+    res.json({ success: true, ...vincularEntrada(req.params.idTransacao, { clienteId: null }) });
+  }));
+
   // ---------------- Cobranças: operações com regra de negócio ----------------
   r.post('/cobrancas', wrap(async (req, res) => {
     const result = await criarCobrancaInter(req.body || {});
@@ -268,6 +278,20 @@ export function createInterRouter() {
     const { dataInicial, dataFinal, filtrarDataPor, situacao, criarClientes } = req.body || {};
     if (!dataInicial || !dataFinal) throw new InterError('Informe o período (dataInicial e dataFinal).', 400);
     res.json({ success: true, ...(await importarCobrancas({ dataInicial, dataFinal, filtrarDataPor, situacao, criarClientes })) });
+  }));
+
+  // PDF do boleto com nome amigável: BOLETO_CLIENTE_DD-MM-AAAA.pdf
+  r.get('/cobrancas/:codigoSolicitacao/pdf', wrap(async (req, res) => {
+    const codigo = req.params.codigoSolicitacao;
+    const data = await interRequest<{ pdf: string }>({ method: 'get', path: `/cobranca/v3/cobrancas/${encodeURIComponent(codigo)}/pdf`, scope: 'boleto-cobranca.read' });
+    let nome = readJson<any[]>(files.cobrancas, []).find(c => c.inter?.codigoSolicitacao === codigo)?.clientName || '';
+    if (!nome) {
+      try {
+        const det = await interRequest<any>({ method: 'get', path: `/cobranca/v3/cobrancas/${encodeURIComponent(codigo)}`, scope: 'boleto-cobranca.read' });
+        nome = det?.cobranca?.pagador?.nome || '';
+      } catch { /* usa o código */ }
+    }
+    sendPdf(res, data?.pdf, nomeArquivo('BOLETO', nome || codigo));
   }));
 
   r.post('/cobrancas/:codigoSolicitacao/sincronizar', wrap(async (req, res) => {
@@ -380,7 +404,7 @@ export function createInterRouter() {
         body: hasBody ? (req.body ?? {}) : undefined,
       });
       if (p.saida) registrarOperacao({ tipo: p.saida, requisicao: hasBody ? req.body : req.params, resposta: data });
-      if (p.pdf) return sendPdf(res, data?.pdf, p.pdf);
+      if (p.pdf) return sendPdf(res, data?.pdf, p.pdf());
       res.json(data ?? { success: true });
     }));
   }

@@ -35,7 +35,18 @@ export async function apiFetch<T = any>(token: string, url: string, opts: { meth
   return data as T;
 }
 
-/** Abre um PDF (ou outro binário) autenticado em nova aba. */
+/** Nome do arquivo informado pelo servidor em Content-Disposition (ex.: NFS_CLIENTE_11-11-2026.pdf). */
+function filenameFrom(res: Response) {
+  const cd = res.headers.get('Content-Disposition') || '';
+  const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  if (star) { try { return decodeURIComponent(star[1]); } catch { /* segue */ } }
+  return cd.match(/filename="?([^";]+)"?/i)?.[1] || '';
+}
+
+/**
+ * Baixa um PDF (ou outro binário) autenticado. Usa o nome sugerido pelo servidor
+ * (NFS_CLIENTE_data.pdf, BOLETO_CLIENTE_data.pdf…); sem nome, abre em nova aba.
+ */
 export async function openBlob(token: string, url: string, download?: string) {
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) {
@@ -43,11 +54,12 @@ export async function openBlob(token: string, url: string, download?: string) {
     try { msg = (await res.json()).error || msg; } catch { /* binário */ }
     throw new Error(msg);
   }
+  const nome = download || filenameFrom(res);
   const blob = await res.blob();
   const href = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = href;
-  if (download) a.download = download; else a.target = '_blank';
+  if (nome) a.download = nome; else a.target = '_blank';
   document.body.appendChild(a);
   a.click();
   a.remove();

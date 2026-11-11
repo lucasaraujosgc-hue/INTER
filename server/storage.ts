@@ -113,3 +113,26 @@ export function createMutex() {
     return next;
   };
 }
+
+/** Data de hoje (AAAA-MM-DD) no horário de Brasília. */
+export function hojeBR(offsetDias = 0): string {
+  return new Date(Date.now() - 3 * 3600_000 + offsetDias * 86400_000).toISOString().slice(0, 10);
+}
+
+/** Nome amigável para downloads: PREFIXO_NOME_DO_CLIENTE_DD-MM-AAAA.ext (sem acentos nem espaços). */
+export function nomeArquivo(prefixo: string, nome: string, ext = 'pdf'): string {
+  const slug = String(nome || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+    .slice(0, 60).replace(/_+$/, '');
+  const [a, m, d] = hojeBR().split('-');
+  return `${prefixo}_${slug || 'SEM_NOME'}_${d}-${m}-${a}.${ext}`;
+}
+
+/** Data de corte das entradas: recebimentos até esta data (inclusive) aparecem como "Antes" e não exigem NFS-e. */
+export const CORTE_ENTRADAS_PADRAO = '2026-10-31';
+export function corteEntradas(): string {
+  const v = getSettings().entradasCorteNfse;
+  if (v === undefined || v === null) return CORTE_ENTRADAS_PADRAO;
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? String(v) : '';
+}

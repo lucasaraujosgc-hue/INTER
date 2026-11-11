@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { files, readJson, writeJson, onlyDigits, getSettings, newId } from '../storage';
+import { files, readJson, writeJson, onlyDigits, getSettings, newId, corteEntradas } from '../storage';
 import { interRequest, InterError } from './client';
 import { emitirNfse } from '../nfse/service';
 
@@ -7,7 +7,7 @@ import { emitirNfse } from '../nfse/service';
 // Utilidades de clientes
 // ---------------------------------------------------------------------------
 
-const COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444'];
+const COLORS = ['#0B4535', '#EA580C', '#0F766E', '#B45309', '#334155'];
 
 export function getClients(): any[] {
   return readJson<any[]>(files.clients, []);
@@ -21,16 +21,67 @@ export function clientDoc(c: any) {
   return onlyDigits(c?.cpfCnpj || c?.document || c?.cnpj || '');
 }
 
-/** Localiza o cliente pelo CPF/CNPJ (preferencial) ou pelo nome. */
-export function matchClient(clients: any[], cpfCnpj?: string, nome?: string) {
+/** Outras pessoas/empresas que costumam pagar pelo cliente (ex.: sócio pagando no CPF). */
+export function clientPagadores(c: any): { cpfCnpj?: string; nome?: string; criadoEm?: string }[] {
+  return Array.isArray(c?.pagadores) ? c.pagadores : [];
+}
+
+export type ViaVinculo = 'documento' | 'pagador' | 'nome' | 'cobranca' | 'manual';
+
+/**
+ * Localiza o cliente de um pagamento: CPF/CNPJ do cliente, depois CPF/CNPJ de um pagador vinculado,
+ * depois nome do cliente e, por fim, nome de um pagador vinculado.
+ */
+export function matchClientInfo(clients: any[], cpfCnpj?: string, nome?: string): { client: any; via: ViaVinculo } | null {
   const doc = onlyDigits(cpfCnpj);
-  if (doc.length === 11 || doc.length === 14) {
+  const docValido = doc.length === 11 || doc.length === 14;
+  if (docValido) {
     const byDoc = clients.find(c => clientDoc(c) === doc);
-    if (byDoc) return byDoc;
+    if (byDoc) return { client: byDoc, via: 'documento' };
+    const byPagador = clients.find(c => clientPagadores(c).some(p => onlyDigits(p.cpfCnpj) === doc));
+    if (byPagador) return { client: byPagador, via: 'pagador' };
   }
   const n = normName(nome || '');
-  if (n.length >= 4) return clients.find(c => normName(c.name) === n) || null;
+  if (n.length >= 4) {
+    const byName = clients.find(c => normName(c.name) === n);
+    if (byName) return { client: byName, via: 'nome' };
+    // Pelo nome do pagador vinculado só quando um dos lados não tem documento (evita homônimos).
+    const byPagadorNome = clients.find(c => clientPagadores(c).some(p => {
+      const pd = onlyDigits(p.cpfCnpj);
+      return normName(p.nome || '') === n && (!docValido || !(pd.length === 11 || pd.length === 14));
+    }));
+    if (byPagadorNome) return { client: byPagadorNome, via: 'pagador' };
+  }
   return null;
+}
+
+/** Localiza o cliente pelo CPF/CNPJ (preferencial), pagadores vinculados ou pelo nome. */
+export function matchClient(clients: any[], cpfCnpj?: string, nome?: string) {
+  return matchClientInfo(clients, cpfCnpj, nome)?.client || null;
+}
+
+/**
+ * Vincula um pagador (CPF/CNPJ e/ou nome) a um cliente: os próximos pagamentos dele passam a ser
+ * identificados como desse cliente. Remove o mesmo pagador de outros clientes para não haver ambiguidade.
+ */
+export function vincularPagador(clienteId: string, pagador: { cpfCnpj?: string; nome?: string }) {
+  const clients = getClients();
+  const alvo = clients.find(c => c.id === clienteId);
+  if (!alvo) throw new InterError('Cliente não encontrado.', 404);
+  const doc = onlyDigits(pagador?.cpfCnpj);
+  const nome = String(pagador?.nome || '').trim();
+  const docValido = doc.length === 11 || doc.length === 14;
+  if (!docValido && normName(nome).length < 4) throw new InterError('Informe o CPF/CNPJ ou o nome do pagador.', 400);
+  if (docValido && clientDoc(alvo) === doc) return alvo; // é o próprio cliente
+  const mesmo = (p: any) => docValido ? onlyDigits(p.cpfCnpj) === doc : (!onlyDigits(p.cpfCnpj) && normName(p.nome || '') === normName(nome));
+  for (const c of clients) {
+    if (c.id !== alvo.id && clientPagadores(c).some(mesmo)) c.pagadores = clientPagadores(c).filter(p => !mesmo(p));
+  }
+  const lista = clientPagadores(alvo).filter(p => !mesmo(p));
+  lista.push({ cpfCnpj: docValido ? doc : '', nome, criadoEm: new Date().toISOString() });
+  alvo.pagadores = lista;
+  writeJson(files.clients, clients);
+  return alvo;
 }
 
 export function clientFromPagador(p: any) {
@@ -105,12 +156,16 @@ function pagadorDaTransacao(t: any) {
   return { nome: String(nome).trim(), cpfCnpj: String(cpfCnpj).trim() };
 }
 
-export async function listarEntradas(dataInicio: string, dataFim: string) {
-  const transacoes = await fetchExtratoCompleto(dataInicio, dataFim, 'C');
+/** Situação de uma entrada quanto à NFS-e. "antes" = recebida até a data de corte (não exige nota pelo sistema). */
+export type SituacaoEntrada = 'emitida' | 'antes' | 'ignorada' | 'pendente';
+
+/** Cruza os créditos do extrato com clientes, cobranças, NFS-e e marcações locais. */
+export function classificarEntradas(transacoes: any[]) {
   const clients = getClients();
   const nfses = readJson<any[]>(files.nfse, []);
   const cobrancas = readJson<any[]>(files.cobrancas, []);
   const marcas = readJson<Record<string, any>>(files.interEntradas, {});
+  const corte = corteEntradas();
 
   const nfseByTransacao = new Map<string, any>();
   for (const n of nfses) {
@@ -122,13 +177,29 @@ export async function listarEntradas(dataInicio: string, dataFim: string) {
     .map(t => {
       const key = entradaKey(t);
       const pagador = pagadorDaTransacao(t);
-      const cliente = matchClient(clients, pagador.cpfCnpj, pagador.nome);
+      const marca = marcas[key] || null;
       const d = t.detalhes || {};
       // Recebimento de boleto emitido pelo sistema: herda a NFS-e da cobrança, se houver.
       const cobranca = d.nossoNumero || d.seuNumero
         ? cobrancas.find(c => (d.nossoNumero && c.boleto?.nossoNumero === d.nossoNumero) || (d.seuNumero && c.inter?.seuNumero === d.seuNumero))
         : (d.txId ? cobrancas.find(c => c.pix?.txid && c.pix.txid === d.txId) : null);
+
+      // Cliente: vínculo manual desta entrada > cliente da cobrança > CPF/CNPJ/nome do pagador.
+      let vinculo: { client: any; via: ViaVinculo } | null = null;
+      const manual = marca?.clienteId ? clients.find(c => c.id === marca.clienteId) : null;
+      if (manual) vinculo = { client: manual, via: 'manual' };
+      if (!vinculo && cobranca?.client) {
+        const c = clients.find(x => x.id === cobranca.client);
+        if (c) vinculo = { client: c, via: 'cobranca' };
+      }
+      if (!vinculo) vinculo = matchClientInfo(clients, pagador.cpfCnpj, pagador.nome);
+
       const nfse = nfseByTransacao.get(key) || (cobranca?.nfse ? nfses.find(n => n.id === cobranca.nfse) : null);
+      const data = String(t.dataTransacao || t.dataInclusao || '').slice(0, 10);
+      const situacao: SituacaoEntrada = nfse ? 'emitida'
+        : corte && data && data <= corte ? 'antes'
+        : marca?.status === 'ignorada' ? 'ignorada'
+        : 'pendente';
       return {
         idTransacao: key,
         data: t.dataTransacao || t.dataInclusao,
@@ -137,22 +208,76 @@ export async function listarEntradas(dataInicio: string, dataFim: string) {
         titulo: t.titulo,
         descricao: t.descricao,
         pagador,
-        cliente: cliente ? { id: cliente.id, name: cliente.name } : null,
+        cliente: vinculo ? { id: vinculo.client.id, name: vinculo.client.name, via: vinculo.via } : null,
         cobranca: cobranca ? { id: cobranca.id, codigoSolicitacao: cobranca.inter?.codigoSolicitacao } : null,
         nfse: nfse ? { id: nfse.id, numero: nfse.numero, status: nfse.status } : null,
-        marcacao: marcas[key] || null,
+        marcacao: marca,
+        situacao,
         detalhes: d,
       };
     })
     .sort((a, b) => String(b.data).localeCompare(String(a.data)));
 }
 
-export function marcarEntrada(idTransacao: string, marcacao: { status: 'ignorada' | 'pendente'; observacao?: string }) {
-  const marcas = readJson<Record<string, any>>(files.interEntradas, {});
-  if (marcacao.status === 'pendente') delete marcas[idTransacao];
-  else marcas[idTransacao] = { ...marcacao, em: new Date().toISOString() };
+export async function listarEntradas(dataInicio: string, dataFim: string) {
+  return classificarEntradas(await fetchExtratoCompleto(dataInicio, dataFim, 'C'));
+}
+
+// Cache curto dos créditos do extrato (o dashboard consulta 6 meses; o Inter limita tokens por minuto).
+const cacheCreditos = new Map<string, { em: number; transacoes: any[] }>();
+export async function creditosComCache(dataInicio: string, dataFim: string, maxIdadeMs = 3 * 60_000, forcar = false) {
+  const k = `${dataInicio}|${dataFim}`;
+  const hit = cacheCreditos.get(k);
+  if (!forcar && hit && Date.now() - hit.em < maxIdadeMs) return hit.transacoes;
+  const transacoes = await fetchExtratoCompleto(dataInicio, dataFim, 'C');
+  cacheCreditos.clear();
+  cacheCreditos.set(k, { em: Date.now(), transacoes });
+  return transacoes;
+}
+
+function salvarMarca(marcas: Record<string, any>, idTransacao: string, marca: Record<string, any>) {
+  const util = Object.keys(marca).filter(k => k !== 'em' && marca[k] !== undefined && marca[k] !== null && marca[k] !== '');
+  if (util.length) marcas[idTransacao] = marca; else delete marcas[idTransacao];
   writeJson(files.interEntradas, marcas);
   return marcas[idTransacao] || null;
+}
+
+export function marcarEntrada(idTransacao: string, marcacao: { status: 'ignorada' | 'pendente'; observacao?: string }) {
+  const marcas = readJson<Record<string, any>>(files.interEntradas, {});
+  const atual = { ...(marcas[idTransacao] || {}) };
+  if (marcacao.status === 'pendente') {
+    delete atual.status;
+    delete atual.observacao;
+  } else {
+    Object.assign(atual, { status: marcacao.status, observacao: marcacao.observacao, em: new Date().toISOString() });
+  }
+  return salvarMarca(marcas, idTransacao, atual);
+}
+
+/**
+ * Vincula uma entrada do extrato a um cliente (empresa). Com "lembrar", o pagador fica vinculado ao cliente
+ * e os próximos pagamentos dele são identificados automaticamente; sem, vale só para esta entrada.
+ */
+export function vincularEntrada(idTransacao: string, input: { clienteId?: string | null; lembrar?: boolean; pagador?: { cpfCnpj?: string; nome?: string } }) {
+  const marcas = readJson<Record<string, any>>(files.interEntradas, {});
+  const atual = { ...(marcas[idTransacao] || {}) };
+  if (!input.clienteId) {
+    delete atual.clienteId;
+    return { marcacao: salvarMarca(marcas, idTransacao, atual), cliente: null };
+  }
+  const cliente = getClients().find(c => c.id === input.clienteId);
+  if (!cliente) throw new InterError('Cliente não encontrado.', 404);
+  let lembrado = false;
+  if (input.lembrar && input.pagador) {
+    const doc = onlyDigits(input.pagador.cpfCnpj);
+    if (doc.length === 11 || doc.length === 14 || normName(input.pagador.nome || '').length >= 4) {
+      vincularPagador(cliente.id, input.pagador);
+      lembrado = true;
+    }
+  }
+  if (lembrado) delete atual.clienteId; // o vínculo do pagador já identifica esta e as próximas entradas
+  else Object.assign(atual, { clienteId: cliente.id, em: new Date().toISOString() });
+  return { marcacao: salvarMarca(marcas, idTransacao, atual), cliente: { id: cliente.id, name: cliente.name }, lembrado };
 }
 
 // ---------------------------------------------------------------------------

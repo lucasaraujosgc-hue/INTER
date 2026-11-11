@@ -87,10 +87,10 @@ export default function InterConfig({ token, onSaved }: { token: string; onSaved
             <Field label="URL pública do sistema" hint="Ex.: https://cobranca.seudominio.com.br — usada para receber os webhooks.">
               <Input value={form.publicUrl} onChange={e => setForm({ ...form, publicUrl: e.target.value })} placeholder="https://" />
             </Field>
-            <label className="md:col-span-2 flex items-start gap-3 p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 cursor-pointer">
+            <label className="md:col-span-2 flex items-start gap-3 p-3 rounded-lg border border-amber-500/30 bg-amber-50 cursor-pointer">
               <input type="checkbox" className="accent-amber-500 w-4 h-4 mt-0.5" checked={form.permitirSaidas} onChange={e => setForm({ ...form, permitirSaidas: e.target.checked })} />
               <span className="text-[12.5px]">
-                <b className="text-amber-400 flex items-center gap-1"><ShieldAlert size={14} /> Permitir operações de saída</b>
+                <b className="text-amber-700 flex items-center gap-1"><ShieldAlert size={14} /> Permitir operações de saída</b>
                 <span className="text-brand-muted">Libera pagamentos de boletos/DARF, envio de Pix, lotes e devoluções a partir do sistema. Mantenha desligado se não for usar.</span>
               </span>
             </label>

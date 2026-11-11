@@ -43,9 +43,9 @@ export default function BancoInter({ token }: { token: string }) {
   return (
     <div className="flex flex-col gap-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-[#FF7A00]/10 flex items-center justify-center text-[#FF7A00] font-bold text-lg">i</div>
+        <div className="w-10 h-10 rounded-md bg-brand-orange flex items-center justify-center text-white font-serif font-bold text-lg">i</div>
         <div>
-          <h2 className="text-lg font-bold text-brand-text">Banco Inter Empresas</h2>
+          <h2 className="text-[22px] font-semibold text-brand-forest font-serif tracking-[-0.01em]">Banco Inter Empresas</h2>
           <p className="text-[12.5px] text-brand-muted">
             {status?.configured
               ? <>Conectado · {status.ambiente === 'sandbox' ? 'Sandbox' : 'Produção'}{status.cert?.validTo ? ` · certificado válido até ${new Date(status.cert.validTo).toLocaleDateString('pt-BR')}` : ''}</>

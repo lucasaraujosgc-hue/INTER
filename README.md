@@ -24,6 +24,20 @@ Obs.: a API pública do Inter não expõe TED; transferências para outras conta
 a NFS-e de cada recebimento (individual ou em lote). Boletos emitidos pelo sistema podem emitir a NFS-e
 automaticamente quando o webhook confirmar o pagamento.
 
+- **Pagador diferente do cliente** (sócio pagando no CPF, parente, outra empresa): use **Vincular** na entrada para
+  indicar a empresa da nota. Com "Lembrar este pagador", o CPF/CNPJ fica salvo em *Pagadores vinculados* no cadastro do
+  cliente e os próximos pagamentos dele são identificados automaticamente. Também dá para vincular na hora de emitir a
+  nota ou direto na tela Clientes.
+- **Data de corte** (Configurações › NFS-e, padrão 31/10/2026): recebimentos até essa data aparecem com a tag **Antes**
+  e não contam como pendência.
+
+**Dashboard**: recebido no mês (extrato Inter), a receber, em atraso, NFS-e do mês, gráfico recebido × faturado dos
+últimos 6 meses, pendências com atalho (recebimentos sem nota, pagamentos sem cliente, atrasos, falhas de emissão,
+cadastros incompletos, certificados vencendo), recebimentos recentes, vencimentos e histórico de atividades.
+
+**PDFs**: os downloads saem como `NFS_NOME_DO_CLIENTE_DD-MM-AAAA.pdf` e `BOLETO_NOME_DO_CLIENTE_DD-MM-AAAA.pdf`
+(mesmo padrão nos anexos de e-mail).
+
 ## Implantação
 
 1. Variáveis de ambiente: veja `.env.example` (defina `PASSWORD`, `JWT_SECRET` e `APP_URL`).

@@ -91,13 +91,13 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-lg font-bold text-brand-text">Notas Fiscais de Serviço (NFS-e)</h2>
+        <h2 className="text-[22px] font-semibold text-brand-forest font-serif tracking-[-0.01em]">Notas Fiscais de Serviço (NFS-e)</h2>
         <div className="flex gap-3">
           <button onClick={() => setIsBatchModalOpen(true)} className="flex items-center gap-1.5 px-4 py-2 bg-brand-surface2 border border-brand-green hover:bg-brand-green/10 text-brand-green rounded-lg text-[13px] font-semibold transition-colors cursor-pointer">
             <Plus size={16} strokeWidth={2.5} />
             Emitir NFS-e em Lote
           </button>
-          <button onClick={() => setEmitir({})} className="flex items-center gap-1.5 px-4 py-2 bg-brand-green hover:bg-brand-green-dim text-black rounded-lg text-[13px] font-semibold transition-colors cursor-pointer">
+          <button onClick={() => setEmitir({})} className="flex items-center gap-1.5 px-4 py-2 bg-brand-green hover:bg-brand-green-dim text-white rounded-lg text-[13px] font-semibold transition-colors cursor-pointer">
             <Plus size={16} strokeWidth={2.5} />
             Emitir NFS-e
           </button>
@@ -106,7 +106,7 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
 
       {msg && <div className="mb-4"><Alert type={msg.type} onClose={() => setMsg(null)}>{msg.text}</Alert></div>}
 
-      <div className="bg-brand-surface border border-brand-border rounded-xl overflow-hidden flex flex-col min-h-[500px]">
+      <div className="bg-brand-surface border border-brand-border rounded-xl shadow-brand overflow-hidden flex flex-col min-h-[500px]">
         <div className="p-4 border-b border-brand-border flex flex-wrap gap-4 items-end">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-dim" size={16} />
@@ -115,19 +115,19 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
               value={search}
               onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
               placeholder="Buscar por cliente, número ou chave..."
-              className="w-full bg-brand-surface2 border border-brand-border rounded-lg py-2 pl-10 pr-4 text-brand-text outline-none focus:border-brand-green transition-colors text-[13px]"
+              className="w-full bg-white border border-brand-border2 rounded-md py-2 pl-10 pr-4 text-brand-text outline-none focus:border-brand-orange transition-colors text-[13px]"
             />
           </div>
           <div className="flex flex-wrap gap-2">
             <div className="relative">
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Empresas</label>
-                <div onClick={() => setShowClientFilter(!showClientFilter)} className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text hover:border-brand-green transition-colors text-[13px] cursor-pointer min-w-[150px]">
+                <div onClick={() => setShowClientFilter(!showClientFilter)} className="bg-white border border-brand-border2 rounded-md px-3 py-1.5 text-brand-text hover:border-brand-green transition-colors text-[13px] cursor-pointer min-w-[150px]">
                   {selectedClients.length === 0 ? 'Todas' : `${selectedClients.length} selecionada(s)`}
                 </div>
               </div>
               {showClientFilter && (
-                <div className="absolute top-full right-0 mt-1 w-64 bg-brand-surface2 border border-brand-border rounded-lg shadow-xl z-10 max-h-60 overflow-y-auto p-2 flex flex-col gap-1">
+                <div className="absolute top-full right-0 mt-1 w-64 bg-white border border-brand-border2 rounded-md shadow-xl z-10 max-h-60 overflow-y-auto p-2 flex flex-col gap-1">
                   <label className="flex items-center gap-2 p-2 hover:bg-brand-surface cursor-pointer rounded">
                     <input type="checkbox" checked={selectedClients.length === 0} onChange={() => setSelectedClients([])} className="accent-brand-green w-4 h-4" />
                     <span className="text-sm text-brand-text">Todas as empresas</span>
@@ -149,12 +149,12 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
             ].map(([label, type, value, set]: any) => (
               <div key={label} className="flex flex-col gap-1">
                 <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">{label}</label>
-                <input type={type} value={value} onChange={e => { set(e.target.value); setCurrentPage(1); }} className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none focus:border-brand-green text-[13px] [color-scheme:dark]" />
+                <input type={type} value={value} onChange={e => { set(e.target.value); setCurrentPage(1); }} className="bg-white border border-brand-border2 rounded-md px-3 py-1.5 text-brand-text outline-none focus:border-brand-orange text-[13px] [color-scheme:light]" />
               </div>
             ))}
             <div className="flex flex-col gap-1">
               <label className="text-[10px] text-brand-muted uppercase font-bold tracking-wide">Status</label>
-              <select value={statusFiltro} onChange={e => setStatusFiltro(e.target.value)} className="bg-brand-surface2 border border-brand-border rounded-lg px-3 py-1.5 text-brand-text outline-none text-[13px]">
+              <select value={statusFiltro} onChange={e => setStatusFiltro(e.target.value)} className="bg-white border border-brand-border2 rounded-md px-3 py-1.5 text-brand-text outline-none text-[13px]">
                 <option value="">Todos</option><option value="issued">Emitidas</option><option value="canceled">Canceladas</option><option value="pending">Pendentes</option>
               </select>
             </div>
@@ -165,7 +165,7 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
             <thead>
               <tr>
                 {['Número', 'Cliente', 'Valor', 'Competência', 'Emissão', 'Status', 'Ações'].map(h => (
-                  <th key={h} className={`px-6 py-3 text-xs font-semibold text-brand-dim uppercase tracking-wide border-b border-brand-border bg-brand-surface2 ${h === 'Ações' ? 'text-right' : ''}`}>{h}</th>
+                  <th key={h} className={`px-6 py-3 text-xs font-semibold text-brand-muted uppercase tracking-wide border-b border-brand-border bg-brand-surface2 ${h === 'Ações' ? 'text-right' : ''}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -173,7 +173,7 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
               {paginatedNfses.length === 0 ? (
                 <tr><td colSpan={7} className="px-6 py-8 text-center text-brand-muted"><Receipt size={48} className="mx-auto mb-4 opacity-20" /><p>Nenhuma NFS-e encontrada.</p></td></tr>
               ) : paginatedNfses.map(n => (
-                <tr key={n.id} className="border-b border-white/5 last:border-0 hover:bg-brand-surface2 transition-colors">
+                <tr key={n.id} className="border-b border-brand-border last:border-0 hover:bg-brand-surface2 transition-colors">
                   <td className="px-6 py-4">
                     <div className="text-brand-text font-mono text-sm">{n.numero || '—'}</div>
                     <div className="text-[10.5px] text-brand-dim">{n.provedor === 'nacional' ? 'Nacional' : 'WebISS'}{n.origem?.tipo === 'inter-extrato' ? ' · entrada Inter' : n.origem?.tipo === 'cobranca' ? ' · cobrança' : ''}</div>
@@ -186,20 +186,20 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
                   <td className="px-6 py-4 text-right">
                     <div className="flex gap-1.5 justify-end">
                       {(n.chaveAcesso || (n.numero && n.codigoVerificacao)) && (
-                        <button onClick={() => openBlob(token, `/api/nfse/${n.id}/pdf`).catch(e => setMsg({ type: 'error', text: e.message }))} className="flex items-center p-1.5 text-brand-dim hover:text-brand-green bg-brand-surface border border-brand-border rounded transition-colors" title="DANFSe (PDF)">
+                        <button onClick={() => openBlob(token, `/api/nfse/${n.id}/pdf`).catch(e => setMsg({ type: 'error', text: e.message }))} className="flex items-center p-1.5 text-brand-dim hover:text-brand-orange-dim bg-brand-surface border border-brand-border rounded transition-colors" title="DANFSe (PDF)">
                           <FileDown size={14} />
                         </button>
                       )}
                       <button onClick={() => openBlob(token, `/api/nfse/${n.id}/xml`, `${n.chaveAcesso || n.id}.xml`).catch(e => setMsg({ type: 'error', text: e.message }))} className="text-brand-muted hover:text-brand-text p-1" title="Baixar XML"><Download size={16} /></button>
                       <button onClick={() => setViewing(n)} className="text-brand-muted hover:text-brand-text p-1" title="Detalhes e XML"><Eye size={16} /></button>
-                      <button onClick={() => setEmitir({ inicial: { clienteId: n.client, cliente: n.clientName, valor: n.value, descricao: n.descricao, competencia: new Date().toISOString().slice(0, 7) } })} className="text-brand-muted hover:text-brand-green p-1" title="Duplicar"><Copy size={16} /></button>
+                      <button onClick={() => setEmitir({ inicial: { clienteId: n.client, cliente: n.clientName, valor: n.value, descricao: n.descricao, competencia: new Date().toISOString().slice(0, 7) } })} className="text-brand-muted hover:text-brand-orange-dim p-1" title="Duplicar"><Copy size={16} /></button>
                       {n.provedor === 'nacional' && (
                         <button onClick={() => sincronizar(n)} disabled={busy === n.id} className="text-brand-muted hover:text-brand-text p-1" title="Consultar na Sefin Nacional">{busy === n.id ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}</button>
                       )}
                       {n.provedor === 'nacional' && n.status === 'issued' && (
-                        <button onClick={() => setCancelando(n)} className="text-brand-muted hover:text-red-400 p-1" title="Cancelar NFS-e"><Ban size={16} /></button>
+                        <button onClick={() => setCancelando(n)} className="text-brand-muted hover:text-red-600 p-1" title="Cancelar NFS-e"><Ban size={16} /></button>
                       )}
-                      <button onClick={() => handleDelete(n)} className="text-brand-muted hover:text-red-500 p-1" title="Excluir registro"><X size={16} /></button>
+                      <button onClick={() => handleDelete(n)} className="text-brand-muted hover:text-red-600 p-1" title="Excluir registro"><X size={16} /></button>
                     </div>
                   </td>
                 </tr>
@@ -343,7 +343,7 @@ function BatchNfseModal({ onClose, onSuccess, token }: { onClose: () => void, on
       </>}>
       {error && <Alert type="error">{error}</Alert>}
       {success && <Alert type="success">{success}</Alert>}
-      {log.length > 0 && <div className="flex flex-col gap-0.5 text-[12px] font-mono max-h-40 overflow-y-auto">{log.map((l, i) => <div key={i} className={l.startsWith('✓') ? 'text-brand-green' : 'text-red-400'}>{l}</div>)}</div>}
+      {log.length > 0 && <div className="flex flex-col gap-0.5 text-[12px] font-mono max-h-40 overflow-y-auto">{log.map((l, i) => <div key={i} className={l.startsWith('✓') ? 'text-brand-green' : 'text-red-600'}>{l}</div>)}</div>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
@@ -366,16 +366,16 @@ function BatchNfseModal({ onClose, onSuccess, token }: { onClose: () => void, on
             {clients.map(client => {
               const hasIssue = clientsWithIssue.has(client.id) || clientsWithIssue.has(client.name);
               return (
-                <div key={client.id} className={`flex items-center gap-3 p-2 rounded-lg border-b border-brand-border/50 last:border-0 ${hasIssue ? 'bg-amber-500/10' : 'hover:bg-brand-surface2'}`}>
+                <div key={client.id} className={`flex items-center gap-3 p-2 rounded-lg border-b border-brand-border/50 last:border-0 ${hasIssue ? 'bg-amber-50' : 'hover:bg-brand-surface2'}`}>
                   <input type="checkbox" className="accent-brand-green w-4 h-4 shrink-0" checked={selectedClients[client.id] || false} onChange={e => setSelectedClients({ ...selectedClients, [client.id]: e.target.checked })} />
                   <div className="flex-1 min-w-0">
-                    <div className={`text-[13px] font-medium truncate ${hasIssue ? 'text-amber-400' : 'text-brand-text'}`} title={client.name}>{client.name} {hasIssue && <span className="text-[10px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded ml-1">Nota emitida</span>}</div>
+                    <div className={`text-[13px] font-medium truncate ${hasIssue ? 'text-amber-700' : 'text-brand-text'}`} title={client.name}>{client.name} {hasIssue && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded ml-1">Nota emitida</span>}</div>
                     <div className="text-[11px] font-mono text-brand-muted">{fmtDoc(client.cpfCnpj || client.cnpj)}</div>
                   </div>
                   <div className="w-28 shrink-0 relative">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-brand-muted">R$</span>
                     <input type="number" value={clientValues[client.id] || 0} onChange={e => setClientValues({ ...clientValues, [client.id]: Number(e.target.value) })} onBlur={e => handleValueBlur(client.id, Number(e.target.value))} disabled={!selectedClients[client.id]}
-                      className="w-full bg-brand-surface border border-brand-border rounded py-1 pl-6 pr-2 text-[13px] text-brand-text outline-none focus:border-brand-green" />
+                      className="w-full bg-brand-surface border border-brand-border rounded py-1 pl-6 pr-2 text-[13px] text-brand-text outline-none focus:border-brand-orange" />
                   </div>
                 </div>
               );

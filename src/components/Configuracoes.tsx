@@ -29,6 +29,7 @@ const DEFAULTS = {
   nfseIbsCbsAtivo: false,
   nfseCIndOp: '',
   nfseCClassTrib: '',
+  entradasCorteNfse: '2026-10-31',
   // legado WebISS
   prestadorIm: '',
   itemLc116: '1719',
@@ -160,6 +161,9 @@ export default function Configuracoes({ token }: { token: string }) {
               </label>
               {form.nfseInformarAliquota && <Field label="Alíquota ISS (%)"><Input type="number" step="0.01" value={form.aliquota} onChange={e => set('aliquota', e.target.value)} /></Field>}
               <Field label="Descrição padrão do serviço" className="md:col-span-2"><Textarea rows={3} value={form.nfseDescricaoPadrao} onChange={e => set('nfseDescricaoPadrao', e.target.value)} /></Field>
+              <Field label="Entradas do Inter: data de corte" hint={<>Recebimentos até esta data (inclusive) aparecem com a tag <b>Antes</b> em Entradas → NFS-e e não contam como pendência. Deixe vazio para tratar todos como pendentes.</>}>
+                <Input type="date" value={form.entradasCorteNfse || ''} onChange={e => set('entradasCorteNfse', e.target.value)} />
+              </Field>
             </div>
           </Card>
         ) : (
@@ -219,7 +223,7 @@ export default function Configuracoes({ token }: { token: string }) {
           </Card>
         )}
 
-        <Card title={<span className="flex items-center gap-2"><Building2 size={16} className="text-[#FF7A00]" /> Banco Inter</span>}>
+        <Card title={<span className="flex items-center gap-2"><Building2 size={16} className="text-brand-orange-dim" /> Banco Inter</span>}>
           <div className="p-5 text-[13px] text-brand-muted">As credenciais, o certificado da API e as permissões do Banco Inter ficam no menu <b className="text-brand-text">Banco Inter › Configuração</b>.</div>
         </Card>
       </div>

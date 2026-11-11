@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Receipt, UserPlus } from 'lucide-react';
+import { Receipt, UserPlus, Link2 } from 'lucide-react';
 import { apiFetch, brl, fmtDoc } from '../lib/api';
 import { Modal, Field, Input, Select, Textarea, Btn, Alert, JsonView } from './ui';
 
@@ -37,6 +37,7 @@ export default function NfseEmitirModal({ token, inicial, origem, titulo, onClos
   const [erros, setErros] = useState<any[]>([]);
   const [xmlPreview, setXmlPreview] = useState('');
   const [success, setSuccess] = useState('');
+  const [lembrarPagador, setLembrarPagador] = useState(true);
 
   useEffect(() => {
     apiFetch<any[]>(token, '/api/clients').then(list => {
@@ -61,6 +62,11 @@ export default function NfseEmitirModal({ token, inicial, origem, titulo, onClos
   const cliente = useMemo(() => clients.find(c => c.id === form.clienteId), [clients, form.clienteId]);
   const pagadorDoc = String(inicial?.pagador?.cpfCnpj || '').replace(/\D/g, '');
   const podeCriarCliente = !form.clienteId && !!inicial?.pagador?.nome && (pagadorDoc.length === 11 || pagadorDoc.length === 14);
+  // Pagador diferente do tomador escolhido (ex.: sócio pagou no CPF): oferece vincular para os próximos recebimentos.
+  const pagadorNome = String(inicial?.pagador?.nome || '').trim();
+  const podeVincularPagador = !!cliente && (pagadorDoc.length === 11 || pagadorDoc.length === 14 || pagadorNome.length >= 4)
+    && String(cliente.cpfCnpj || '').replace(/\D/g, '') !== pagadorDoc
+    && !(Array.isArray(cliente.pagadores) && cliente.pagadores.some((p: any) => pagadorDoc ? String(p.cpfCnpj || '').replace(/\D/g, '') === pagadorDoc : p.nome === pagadorNome));
 
   const criarCliente = async () => {
     setCreatingClient(true);
@@ -102,6 +108,9 @@ export default function NfseEmitirModal({ token, inicial, origem, titulo, onClos
     setLoading(true);
     setError(''); setErros([]); setXmlPreview(''); setSuccess('');
     try {
+      if (podeVincularPagador && lembrarPagador) {
+        await apiFetch(token, `/api/clients/${form.clienteId}/pagadores`, { method: 'POST', body: { cpfCnpj: pagadorDoc, nome: pagadorNome } }).catch(() => undefined);
+      }
       const r = await apiFetch<any>(token, '/api/nfse/emitir', {
         method: 'POST',
         body: {
@@ -144,7 +153,7 @@ export default function NfseEmitirModal({ token, inicial, origem, titulo, onClos
       {error && <Alert type="error">{error}{erros.length > 0 && <ul className="mt-2 list-disc ml-4">{erros.map((x, i) => <li key={i}>{x.codigo ? `[${x.codigo}] ` : ''}{x.descricao}{x.complemento ? ` — ${x.complemento}` : ''}</li>)}</ul>}</Alert>}
       {success && <Alert type="success">{success}</Alert>}
       {inicial?.pagador?.nome && (
-        <div className="text-[12px] text-brand-muted bg-brand-surface2 rounded-lg p-3 flex flex-wrap items-center gap-2">
+        <div className="text-[12px] text-brand-muted bg-brand-bg border border-brand-border rounded-lg p-3 flex flex-wrap items-center gap-2">
           <span>Pagador no banco: <b className="text-brand-text">{inicial.pagador.nome}</b> {pagadorDoc && `(${fmtDoc(pagadorDoc)})`}</span>
           {inicial.valor ? <span>· Valor recebido: <b className="text-brand-text">{brl(inicial.valor)}</b></span> : null}
           {podeCriarCliente && <Btn className="ml-auto" icon={<UserPlus size={14} />} loading={creatingClient} onClick={criarCliente}>Cadastrar como cliente</Btn>}
@@ -156,6 +165,15 @@ export default function NfseEmitirModal({ token, inicial, origem, titulo, onClos
           <Select value={form.clienteId} onChange={e => setForm({ ...form, clienteId: e.target.value })}
             options={[{ value: '', label: 'Selecione o cliente…' }, ...clients.map(c => ({ value: c.id, label: `${c.name}${c.cpfCnpj ? ` — ${fmtDoc(c.cpfCnpj)}` : ''}` }))]} />
         </Field>
+        {podeVincularPagador && (
+          <label className="md:col-span-2 flex items-start gap-2.5 text-[12.5px] cursor-pointer select-none rounded-lg border border-orange-200 bg-brand-orange-soft p-3">
+            <input type="checkbox" className="accent-brand-orange w-4 h-4 mt-0.5" checked={lembrarPagador} onChange={e => setLembrarPagador(e.target.checked)} />
+            <span>
+              <b className="text-brand-forest inline-flex items-center gap-1"><Link2 size={13} /> Vincular {pagadorNome || fmtDoc(pagadorDoc)} a {cliente!.name}</b>
+              <span className="block text-brand-muted">Os próximos pagamentos dessa pessoa/empresa entram automaticamente como deste cliente.</span>
+            </span>
+          </label>
+        )}
         {enderecoIncompleto && (
           <div className="md:col-span-2"><Alert type="info">O cadastro deste cliente está sem endereço completo; a NFS-e será emitida só com CPF/CNPJ e nome do tomador.</Alert></div>
         )}

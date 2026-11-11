@@ -16,13 +16,13 @@ export default function Relatorios({ token }: { token: string }) {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-lg font-bold text-brand-text">Relatórios Financeiros</h2>
+        <h2 className="text-[22px] font-semibold text-brand-forest font-serif tracking-[-0.01em]">Relatórios Financeiros</h2>
         <div className="flex gap-2">
           <button className="bg-brand-surface2 hover:bg-brand-surface3 text-brand-text font-medium py-2 px-4 rounded-lg flex items-center gap-2 transition-colors border border-brand-border">
             <Filter size={16} />
             Filtros
           </button>
-          <button className="bg-brand-green hover:bg-brand-green-dim text-black font-bold py-2 px-4 rounded-lg flex items-center gap-2 transition-colors">
+          <button className="bg-brand-green hover:bg-brand-green-dim text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 transition-colors">
             <Download size={16} />
             Exportar
           </button>
@@ -31,10 +31,10 @@ export default function Relatorios({ token }: { token: string }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Receitas vs Despesas */}
-        <div className="bg-brand-surface border border-brand-border rounded-xl p-6">
+        <div className="bg-brand-surface border border-brand-border rounded-xl shadow-brand p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-bold text-brand-text">Receitas vs Despesas</h3>
-            <select className="bg-brand-surface2 border border-brand-border rounded-lg text-sm text-brand-text py-1 px-2 outline-none">
+            <select className="bg-white border border-brand-border2 rounded-md text-sm text-brand-text py-1 px-2 outline-none">
               <option>Este Mês</option>
               <option>Último Mês</option>
               <option>Este Ano</option>
@@ -58,17 +58,17 @@ export default function Relatorios({ token }: { token: string }) {
         </div>
 
         {/* Inadimplência */}
-        <div className="bg-brand-surface border border-brand-border rounded-xl p-6">
+        <div className="bg-brand-surface border border-brand-border rounded-xl shadow-brand p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-bold text-brand-text">Taxa de Inadimplência</h3>
-            <select className="bg-brand-surface2 border border-brand-border rounded-lg text-sm text-brand-text py-1 px-2 outline-none">
+            <select className="bg-white border border-brand-border2 rounded-md text-sm text-brand-text py-1 px-2 outline-none">
               <option>Últimos 6 meses</option>
               <option>Últimos 12 meses</option>
             </select>
           </div>
           <div className="h-64 flex items-center justify-center">
             <div className="text-center">
-              <div className="text-4xl font-bold text-red-400 mb-2">0,0%</div>
+              <div className="text-4xl font-bold text-red-600 mb-2">0,0%</div>
               <div className="text-sm text-brand-muted">Nenhuma cobrança em atraso no período</div>
             </div>
           </div>
