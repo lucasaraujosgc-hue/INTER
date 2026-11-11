@@ -38,6 +38,11 @@ cadastros incompletos, certificados vencendo), vencimentos e histórico de ativi
 **Boleto pago por fora** (cliente fez Pix direto na conta): em Boletos / Cobranças use **Marcar pago**. O pagamento fica
 registrado no sistema e, se marcado, o boleto é baixado (cancelado) no Inter para não ser pago de novo nem ir a protesto.
 
+**Notas no Ambiente Nacional**: em Sistema › Notas emitidas, o botão *Consultar Ambiente Nacional* baixa do ADN
+(Ambiente de Dados Nacional, com o certificado A1) as NFS-e **emitidas** pela empresa e as **tomadas** de terceiros,
+incluindo cancelamentos. Dá para filtrar, baixar PDF/XML e trazer para o sistema uma nota emitida fora dele.
+Variável opcional `NFSE_URL_ADN` para apontar para outro endereço do ADN.
+
 **PDFs**: os downloads saem como `NFS_NOME_DO_CLIENTE_DD-MM-AAAA.pdf` e `BOLETO_NOME_DO_CLIENTE_DD-MM-AAAA.pdf`
 (mesmo padrão nos anexos de e-mail).
 

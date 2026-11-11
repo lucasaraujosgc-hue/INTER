@@ -15,6 +15,8 @@ export const files = {
   interEntradas: path.join(backupDir, 'inter_entradas.json'),
   // Boletos marcados como pagos por fora (ex.: cliente pagou por Pix direto na conta), por codigoSolicitacao
   cobrancasBaixas: path.join(backupDir, 'cobrancas_baixas.json'),
+  // NFS-e emitidas e tomadas baixadas do Ambiente de Dados Nacional (ADN)
+  nfseAdn: path.join(backupDir, 'nfse_adn.json'),
   // Histórico das operações de saída feitas pelo sistema (Pix, boletos, DARF, lotes)
   interOperacoes: path.join(backupDir, 'inter_operacoes.json'),
   // Últimos webhooks recebidos do Inter

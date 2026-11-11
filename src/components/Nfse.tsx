@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Receipt, Loader2, Search, Eye, Download, Plus, X, Copy, FileDown, Ban, RefreshCw } from 'lucide-react';
+import { Receipt, Loader2, Search, Eye, Download, Plus, X, Copy, FileDown, Ban, RefreshCw, Globe } from 'lucide-react';
 import { apiFetch, openBlob, brl, fmtDoc } from '../lib/api';
 import { Modal, Btn, Alert, Field, Input, Select, Textarea, JsonView, Badge } from './ui';
 import NfseEmitirModal from './NfseEmitirModal';
+import ConsultaNacionalModal from './ConsultaNacionalModal';
 
 export function competenciaDe(n: any): string {
   if (n.competencia) return String(n.competencia).slice(0, 7);
@@ -22,6 +23,7 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
   const [loading, setLoading] = useState(true);
   const [emitir, setEmitir] = useState<{ inicial?: any } | null>(null);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [consultaNacional, setConsultaNacional] = useState(false);
   const [viewing, setViewing] = useState<any | null>(null);
   const [cancelando, setCancelando] = useState<any | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -92,7 +94,8 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-[22px] font-semibold text-brand-forest font-serif tracking-[-0.01em]">Notas Fiscais de Serviço (NFS-e)</h2>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
+          <Btn variant="orange" icon={<Globe size={15} />} onClick={() => setConsultaNacional(true)}>Consultar Ambiente Nacional</Btn>
           <button onClick={() => setIsBatchModalOpen(true)} className="flex items-center gap-1.5 px-4 py-2 bg-brand-surface2 border border-brand-green hover:bg-brand-green/10 text-brand-green rounded-lg text-[13px] font-semibold transition-colors cursor-pointer">
             <Plus size={16} strokeWidth={2.5} />
             Emitir NFS-e em Lote
@@ -223,6 +226,7 @@ export default function Nfse({ token, refreshKey, setRefreshKey }: { token: stri
       </div>
 
       {emitir && <NfseEmitirModal token={token} inicial={emitir.inicial} onClose={() => setEmitir(null)} onSuccess={handleSuccess} />}
+      {consultaNacional && <ConsultaNacionalModal token={token} onClose={() => setConsultaNacional(false)} onImportada={handleSuccess} />}
       {isBatchModalOpen && <BatchNfseModal onClose={() => setIsBatchModalOpen(false)} onSuccess={handleSuccess} token={token} />}
       {cancelando && <CancelarNfseModal token={token} n={cancelando} onClose={() => setCancelando(null)} onDone={(t) => { setMsg({ type: 'success', text: t }); handleSuccess(); }} />}
 

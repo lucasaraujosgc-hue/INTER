@@ -314,6 +314,43 @@ async function emitirViaWebIss(input: EmitirNfseInput, client: any, cert: CertA1
   }
 }
 
+/** Traz para "Notas emitidas" uma NFS-e emitida fora do sistema (encontrada no Ambiente Nacional). */
+export function importarNfseExterna(doc: { chave: string; xml: string; cancelada?: boolean; canceladaEm?: string }, ambiente: Ambiente) {
+  const list = readJson<any[]>(files.nfse, []);
+  const existente = list.find(n => n.chaveAcesso === doc.chave);
+  if (existente) return { nfse: existente, criada: false };
+  const lida = lerNfse(doc.xml);
+  const clients = readJson<any[]>(files.clients, []);
+  const tomaDoc = onlyDigits(lida.dps.toma.doc);
+  const client = tomaDoc ? clients.find(c => onlyDigits(c.cpfCnpj || c.document || c.cnpj) === tomaDoc) : null;
+  const record = {
+    id: `NFS-${lida.nNFSe || Date.now()}-${doc.chave.slice(-6)}`,
+    provedor: 'nacional',
+    ambiente,
+    numero: lida.nNFSe,
+    chaveAcesso: doc.chave,
+    serieDps: lida.dps.serie,
+    numeroDps: lida.dps.nDPS,
+    client: client?.id || lida.dps.toma.nome || '',
+    clientName: client?.name || lida.dps.toma.nome || 'Consumidor não identificado',
+    clientDoc: tomaDoc,
+    value: Number(lida.dps.vServ || 0),
+    competencia: String(lida.dps.dCompet || lida.dps.dhEmi || '').slice(0, 7),
+    descricao: lida.dps.xDescServ,
+    issueDate: String(lida.dhProc || lida.dps.dhEmi || new Date().toISOString()).slice(0, 10),
+    dhProc: lida.dhProc,
+    status: doc.cancelada ? 'canceled' : 'issued',
+    ...(doc.cancelada ? { cancelamento: { em: doc.canceladaEm || new Date().toISOString(), motivo: 'Cancelada no Ambiente Nacional' } } : {}),
+    valores: lida.valores,
+    origem: { tipo: 'adn' },
+    nfseXml: doc.xml,
+    createdAt: new Date().toISOString(),
+  };
+  list.push(record);
+  writeJson(files.nfse, list);
+  return { nfse: record, criada: true };
+}
+
 // ---------------------------------------------------------------------------
 // Pós-emissão: consulta, cancelamento e DANFSe
 // ---------------------------------------------------------------------------

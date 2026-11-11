@@ -19,7 +19,10 @@ import { criarCobrancaInter, vincularPagador } from './server/inter/service';
 import { montarDashboard } from './server/dashboard';
 import {
   emitirNfse, obterPdfNfse, cancelarNfse, sincronizarNfse, testarConexaoNacional, nfseConfig, DESCRICAO_PADRAO,
+  loadCertA1, importarNfseExterna,
 } from './server/nfse/service';
+import { sincronizarAdn, listarAdn, obterDocAdn } from './server/nfse/adn';
+import { danfsePdf } from './server/nfse/danfse';
 import { WEBSERVICE_URL } from './server/nfse/webiss';
 
 const app = express();
@@ -539,6 +542,62 @@ app.post('/api/send-email', authenticate, async (req, res) => {
     console.error('Erro ao enviar e-mail:', error);
     res.status(500).json({ error: error.message || 'Erro interno ao enviar e-mail' });
   }
+});
+
+// --- NFS-e no Ambiente de Dados Nacional (emitidas e tomadas) ---
+app.post('/api/nfse-nacional/sincronizar', authenticate, async (req, res) => {
+  try {
+    const cert = loadCertA1();
+    if (!cert) return res.status(400).json({ error: 'Certificado Digital A1 não configurado. Importe o .pfx em Configurações.' });
+    const cfg = nfseConfig();
+    res.json({ success: true, ...(await sincronizarAdn({ ambiente: cfg.ambiente, cnpj: cfg.cnpj, cert, desdeInicio: req.body?.desdeInicio === true })) });
+  } catch (error: any) {
+    console.error('Erro ao sincronizar com o ADN:', error.message);
+    res.status(errorStatus(error) === 500 ? 502 : errorStatus(error)).json({ error: error.message || 'Erro ao consultar o Ambiente Nacional' });
+  }
+});
+
+app.get('/api/nfse-nacional', authenticate, (req, res) => {
+  const cfg = nfseConfig();
+  const q = req.query as Record<string, string>;
+  const r = listarAdn({ ambiente: cfg.ambiente, cnpj: cfg.cnpj, papel: q.papel, inicio: q.inicio, fim: q.fim, por: q.por === 'competencia' ? 'competencia' : 'emissao', busca: q.busca });
+  const noSistema = new Set(readJson<any[]>(files.nfse, []).map(n => n.chaveAcesso).filter(Boolean));
+  res.json({ ...r, ambiente: cfg.ambiente, cnpj: cfg.cnpj, docs: r.docs.map(d => ({ ...d, noSistema: noSistema.has(d.chave) })) });
+});
+
+app.get('/api/nfse-nacional/:chave/xml', authenticate, (req, res) => {
+  const cfg = nfseConfig();
+  const d = obterDocAdn(cfg.ambiente, cfg.cnpj, req.params.chave);
+  if (!d) return res.status(404).json({ error: 'NFS-e não encontrada. Sincronize com o Ambiente Nacional.' });
+  const nome = d.papel === 'tomada' ? d.prestador.nome : d.tomador.nome;
+  res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${nomeArquivo('NFS', nome || d.chave, 'xml')}"`);
+  res.send(d.xml);
+});
+
+app.get('/api/nfse-nacional/:chave/pdf', authenticate, async (req, res) => {
+  try {
+    const cfg = nfseConfig();
+    const d = obterDocAdn(cfg.ambiente, cfg.cnpj, req.params.chave);
+    if (!d) return res.status(404).json({ error: 'NFS-e não encontrada. Sincronize com o Ambiente Nacional.' });
+    const nome = d.papel === 'tomada' ? d.prestador.nome : d.tomador.nome;
+    const pdf = await danfsePdf(d.xml, { cancelada: d.cancelada });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${nomeArquivo('NFS', nome || d.chave)}"`);
+    res.send(pdf);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Erro ao gerar o PDF' });
+  }
+});
+
+// Traz uma nota emitida fora do sistema (portal, outro emissor) para "Notas emitidas".
+app.post('/api/nfse-nacional/:chave/importar', authenticate, (req, res) => {
+  const cfg = nfseConfig();
+  const d = obterDocAdn(cfg.ambiente, cfg.cnpj, req.params.chave);
+  if (!d) return res.status(404).json({ error: 'NFS-e não encontrada. Sincronize com o Ambiente Nacional.' });
+  if (d.papel !== 'emitida') return res.status(400).json({ error: 'Só notas emitidas pela empresa podem ir para "Notas emitidas".' });
+  const r = importarNfseExterna(d, cfg.ambiente);
+  res.json({ success: true, ...r, message: r.criada ? `NFS-e nº ${r.nfse.numero} adicionada às notas emitidas.` : 'Esta NFS-e já estava no sistema.' });
 });
 
 app.get('/api/nfse-defaults', authenticate, (_req, res) => {
